@@ -67,5 +67,4 @@ def preprocess(file):
             'code':          current_line,
             'physical_line': start_physical_line
         })
-    
     return logical_lines

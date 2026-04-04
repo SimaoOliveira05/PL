@@ -1,12 +1,10 @@
       PROGRAM FATORIAL
       INTEGER N, I, FAT
       PRINT *, 'Introduza um numero inteiro positivo:'
-      READ *, N          
+      READ *, N
       FAT = 1
-      DO 10 I = 1, N       
+      DO 10 I = 1, N
           FAT = FAT * I
-  10  CONTINUE          
+  10  CONTINUE
       PRINT *, 'Fatorial de ', N, ': ', FAT
       END
-
-      

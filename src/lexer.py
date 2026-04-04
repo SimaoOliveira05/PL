@@ -113,18 +113,3 @@ def t_error(t):
 
 # ── Build the lexer ──────────────────────────────────────────────────────────
 lexer = lex.lex()
-
-
-# Quick test — paste at the bottom of lexer.py and run directly
-if __name__ == '__main__':
-    from preprocessor import preprocess
-
-    with open('../tests/fatorial.f') as f:
-        logical_lines = preprocess(f)
-
-    for line in logical_lines:
-        print(f"\n--- logical line {line['physical_line']} ---")
-        lexer.lineno = line['physical_line']  # set the line number from the preprocessor
-        lexer.input(line['code'])
-        for tok in lexer:
-            print(tok)
