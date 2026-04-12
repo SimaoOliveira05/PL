@@ -10,8 +10,7 @@ tokens = (
     'IF', 'THEN', 'ELSE', 'ENDIF',
     'DO', 'CONTINUE', 'GOTO',
     'READ', 'PRINT',
-    'RETURN', 'FUNCTION', 'SUBROUTINE',
-    'MOD',
+    'RETURN', 'FUNCTION', 'SUBROUTINE', 'CALL',
 
     # Multi-character arithmetic
     'POWER',
@@ -55,7 +54,7 @@ KEYWORDS = {
     'RETURN'     : 'RETURN',
     'FUNCTION'   : 'FUNCTION',
     'SUBROUTINE' : 'SUBROUTINE',
-    'MOD'        : 'MOD',
+    'CALL'       : 'CALL',
 }
 
 # ── Multi-character arithmetic ───────────────────────────────────────────────

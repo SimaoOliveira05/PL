@@ -4,3 +4,7 @@ __pycache__/
 *.pyd
 .env
 venv/
+# PLY generated files
+src/parser.out
+src/parsetab.py
+CLAUDE.md
