@@ -6,6 +6,7 @@ import ply.lex as lex
 from preprocessor import preprocess
 from lexer import lexer
 from parser import parser
+from semantic import analyse, SemanticError
 
 
 def _make_token(type_, value, lineno):
@@ -69,3 +70,14 @@ if __name__ == '__main__':
 
     print("=== AST ===")
     pprint.pprint(ast)
+
+    try:
+        annotated, symtab = analyse(ast)
+        print("\n=== Symbol Table ===")
+        for name, info in symtab.items():
+            print(f"  {name}: {info}")
+        print("\n=== Annotated AST ===")
+        pprint.pprint(annotated)
+    except SemanticError as e:
+        print(f"\nSemantic error: {e}")
+        sys.exit(1)

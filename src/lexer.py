@@ -112,3 +112,5 @@ def t_error(t):
 
 # ── Build the lexer ──────────────────────────────────────────────────────────
 lexer = lex.lex()
+
+# TALVEZ USAR ESTADOS PARA FACILIAR O TRABALHO DO LEXER
