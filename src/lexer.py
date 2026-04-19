@@ -96,8 +96,7 @@ def t_STRING_LIT(t):
 # ── Identifiers and keywords ─────────────────────────────────────────────────
 # Matches any identifier — then checks if it's actually a keyword
 def t_ID(t):
-    r'[A-Za-z][A-Za-z0-9_]*'
-    t.value = t.value.upper()               # Fortran is case-insensitive
+    r'[A-Z][A-Z0-9]*'
     t.type  = KEYWORDS.get(t.value, 'ID')   # keyword or plain identifier
     return t
 
@@ -113,4 +112,3 @@ def t_error(t):
 # ── Build the lexer ──────────────────────────────────────────────────────────
 lexer = lex.lex()
 
-# TALVEZ USAR ESTADOS PARA FACILIAR O TRABALHO DO LEXER
