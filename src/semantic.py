@@ -74,32 +74,38 @@ class SemanticAnalyser:
         self._label_stmts = {}        # label → inner-stmt tag (for DO validation)
         self._declarations_closed = False
 
-    # ── Public error hook ──────────────────────────────────────────────────────
+    # ── Public error hook 
 
     def error(self, msg: str):
         """Raise a SemanticError.  Change to collect-all later if desired."""
         raise SemanticError(msg)
 
-    # ── Entry point ────────────────────────────────────────────────────────────
+    # ── Entry point 
 
     def analyse(self, ast):
         """
         ast : list of program-unit tuples (parser output).
         Returns the annotated AST (same list structure).
         """
-        return [self._analyse_unit(unit) for unit in ast]
+        unitList = []
+        for unit in ast:
+            analysedUnit = self._analyse_unit(unit)
+            unitList.append(analysedUnit)
 
-    # ── Program unit ───────────────────────────────────────────────────────────
+        return unitList
+
+    # ── Program unit
 
     def _analyse_unit(self, unit):
         tag = unit[0]
         if tag == 'program':
             _, name, stmts = unit
             self._reset()
+            # Do first scan, coolect
             self._labels, self._label_stmts = self._collect_labels(stmts)
             new_stmts = self._analyse_stmts(stmts)
             return ('program', name, new_stmts)
-        # Subprograms are out of scope — pass through unchanged.
+        # Subprograms are out of scope for now — pass through unchanged.
         return unit
 
     def _reset(self):
@@ -109,7 +115,7 @@ class SemanticAnalyser:
         self._label_stmts = {}
         self._declarations_closed = False
 
-    # ── Scan 1: label collection ───────────────────────────────────────────────
+    # ── Scan 1: label collection 
 
     def _collect_labels(self, stmts, labels=None, label_stmts=None):
         """
@@ -125,8 +131,10 @@ class SemanticAnalyser:
         for stmt in stmts:
             if stmt[0] == 'labeled':
                 _, lbl, inner = stmt
+
                 if lbl in labels:
                     self.error(f"Duplicate label {lbl}")
+
                 labels.add(lbl)
                 label_stmts[lbl] = inner[0]
                 node = inner

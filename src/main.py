@@ -7,6 +7,7 @@ from preprocessor import preprocess
 from lexer import lexer
 from parser import parser
 from semantic import analyse, SemanticError
+from semanticSimple import SemanticAnalyser as SimpleAnalyser
 
 
 def _make_token(type_, value, lineno):
@@ -71,13 +72,8 @@ if __name__ == '__main__':
     print("=== AST ===")
     pprint.pprint(ast)
 
-    try:
-        annotated, symtab = analyse(ast)
-        print("\n=== Symbol Table ===")
-        for name, info in symtab.items():
-            print(f"  {name}: {info}")
-        print("\n=== Annotated AST ===")
-        pprint.pprint(annotated)
-    except SemanticError as e:
-        print(f"\nSemantic error: {e}")
-        sys.exit(1)
+    print("\n=== Simple Semantic ===")
+    sa = SimpleAnalyser()
+    result = sa.analyse(ast)
+    print("Symbol table:", sa.symtab)
+    pprint.pprint(result)
