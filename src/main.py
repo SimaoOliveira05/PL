@@ -6,8 +6,7 @@ import ply.lex as lex
 from preprocessor import preprocess
 from lexer import lexer
 from parser import parser
-from semantic import analyse, SemanticError
-from semanticSimple import SemanticAnalyser as SimpleAnalyser
+from semantic import SemanticAnalyser as Analyser
 
 
 def _make_token(type_, value, lineno):
@@ -73,7 +72,7 @@ if __name__ == '__main__':
     pprint.pprint(ast)
 
     print("\n=== Simple Semantic ===")
-    sa = SimpleAnalyser()
+    sa = Analyser()
     result = sa.analyse(ast)
     print("Symbol table:", sa.symtab)
     pprint.pprint(result)
