@@ -93,23 +93,35 @@ class SemanticAnalyser:
             ltype = self.getType(left_out)
             rtype = self.getType(right_out)
             if ltype != rtype:
-                self.error(f'Type mismatch: {ltype} {op} {rtype}')
+                if {ltype, rtype} == {'INTEGER', 'REAL'}:
+                    if ltype == 'INTEGER':
+                        left_out = ('coerce', 'ITOF', left_out, 'REAL')
+                    else:
+                        right_out = ('coerce', 'ITOF', right_out, 'REAL')
+                    result_type = 'REAL'
+                else:
+                    self.error(f'Type mismatch: {ltype} {op} {rtype}')
+            else:
+                result_type = ltype
             if op in ('.EQ.', '.NE.', '.LT.', '.LE.', '.GT.', '.GE.'):
                 return ('binop', op, left_out, right_out, 'LOGICAL')
-            return ('binop', op, left_out, right_out, ltype)
+            return ('binop', op, left_out, right_out, result_type)
 
         if tag == 'unary':
             _, op, operand = expr
             operand_out = self.checkType(operand)
             otype = self.getType(operand_out)
+
             if op == '-':
                 if otype not in ('INTEGER', 'REAL'):
                     self.error(f"Unary minus requires numeric operand, got {otype}")
                 return ('unary', op, operand_out, otype)
+            
             if op == 'NOT':
                 if otype != 'LOGICAL':
                     self.error(f".NOT. requires LOGICAL operand, got {otype}")
                 return ('unary', op, operand_out, 'LOGICAL')
+            
             self.error(f"Unknown unary operator: {op}")
 
         if tag == 'call_or_arr':
@@ -118,9 +130,12 @@ class SemanticAnalyser:
             args_out = [self.checkType(arg) for arg in args]
             if name in INTRINSICS:
                 return ('call_or_arr', name, args_out, INTRINSICS[name])
-            else:
-                info = self.lookup(name)
-                return ('call_or_arr', name, args_out, info['type'])
+            info = self.lookup(name)
+            if info['kind'] == 'array':
+                if len(args_out) != 1:
+                    self.error(f"Array '{name}' indexed with {len(args_out)} indices")
+                return ('arr_ref', name, args_out[0], info['type'], info['offset'])
+            return ('call_or_arr', name, args_out, info['type'])
 
         if tag == 'arr_ref':
             name = expr[1]
@@ -262,3 +277,11 @@ class SemanticAnalyser:
             self.offset += 1
             new_stmts = self.analyseStmts(stmts)
             return ('function', return_type, name, params, new_stmts)
+
+        if tag == 'subroutine':
+            _, name, params, stmts = unit
+            self.symtab = {}
+            self.offset = 0
+            self.labels = set()
+            new_stmts = self.analyseStmts(stmts)
+            return ('subroutine', name, params, new_stmts)
