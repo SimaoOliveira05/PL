@@ -7,6 +7,8 @@ from preprocessor import preprocess
 from lexer import lexer
 from parser import parser
 from semantic import SemanticAnalyser as Analyser
+from irgen import IRGenerator
+from codegen import CodeGenerator
 
 
 def _make_token(type_, value, lineno):
@@ -76,3 +78,20 @@ if __name__ == '__main__':
     result = sa.analyse(ast)
     print("Symbol table:", sa.symtab)
     pprint.pprint(result)
+
+    print("\n=== IR ===")
+    ir_generator = IRGenerator()
+    ir_list= ir_generator.generate(result)
+    for proc in ir_list:            
+        print(f"\n--- {proc.name} ---")
+    for instr in proc.instructions:    
+        print(instr)
+    
+    cg = CodeGenerator()
+    for proc in ir_list:
+        cg.genProcedure(proc)
+
+    print("\n=== VM Code ===")
+    for line in cg.output:
+        print(line)
+

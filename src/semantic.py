@@ -10,6 +10,10 @@ INTRINSICS = {
     'MIN':  'INTEGER',
 }
 
+_INT_OPS  = {'+': 'ADD',  '-': 'SUB',  '*': 'MUL',  '/': 'DIV'}
+_REAL_OPS = {'+': 'FADD', '-': 'FSUB', '*': 'FMUL', '/': 'FDIV'}
+_REL_INT  = {'.EQ.': 'EQUAL', '.NE.': 'NEQ', '.LT.': 'INF',  '.LE.': 'INFEQ', '.GT.': 'SUP',  '.GE.': 'SUPEQ'}
+_REL_REAL = {'.EQ.': 'EQUAL', '.NE.': 'NEQ', '.LT.': 'FINF', '.LE.': 'FINFEQ','.GT.': 'FSUP', '.GE.': 'FSUPEQ'}
 
 class SemanticAnalyser:
 
@@ -39,6 +43,10 @@ class SemanticAnalyser:
             name = var[1]
 
             if name in self.symtab:
+                info = self.symtab[name]
+                if info.get('kind') == 'param' and info['type'] is None:
+                    info['type'] = type
+                    continue
                 self.error(f"Duplicate variable declaration: '{name}'")
 
             if vtag == 'scalar':
@@ -103,9 +111,25 @@ class SemanticAnalyser:
                     self.error(f'Type mismatch: {ltype} {op} {rtype}')
             else:
                 result_type = ltype
+
             if op in ('.EQ.', '.NE.', '.LT.', '.LE.', '.GT.', '.GE.'):
-                return ('binop', op, left_out, right_out, 'LOGICAL')
-            return ('binop', op, left_out, right_out, result_type)
+                table = _REL_REAL if result_type == 'REAL' else _REL_INT
+                opcode = table[op]
+                return ('binop', opcode, left_out, right_out, 'LOGICAL')
+
+            if op in ('.AND.', '.OR.'):
+                if ltype != 'LOGICAL' or rtype != 'LOGICAL':
+                    self.error(f"Logical operator {op} requires LOGICAL operands, got {ltype} and {rtype}")
+                opcode = 'AND' if op == '.AND.' else 'OR'
+                return ('binop', opcode, left_out, right_out, 'LOGICAL')
+
+            if op == '**':
+                opcode = 'FPOW' if result_type == 'REAL' else 'POW'
+                return ('binop', opcode, left_out, right_out, result_type)
+
+            opcode = _REAL_OPS[op] if result_type == 'REAL' else _INT_OPS[op]
+            return ('binop', opcode, left_out, right_out, result_type)
+
 
         if tag == 'unary':
             _, op, operand = expr
@@ -129,13 +153,13 @@ class SemanticAnalyser:
             args = expr[2]
             args_out = [self.checkType(arg) for arg in args]
             if name in INTRINSICS:
-                return ('call_or_arr', name, args_out, INTRINSICS[name])
+                return ('call', name, args_out, INTRINSICS[name])
             info = self.lookup(name)
             if info['kind'] == 'array':
                 if len(args_out) != 1:
                     self.error(f"Array '{name}' indexed with {len(args_out)} indices")
                 return ('arr_ref', name, args_out[0], info['type'], info['offset'])
-            return ('call_or_arr', name, args_out, info['type'])
+            return ('call', name, args_out, info['type'])
 
         if tag == 'arr_ref':
             name = expr[1]
@@ -183,7 +207,7 @@ class SemanticAnalyser:
             var_out   = self.checkType(('var', loop_variable))
             start_out = self.checkType(start)
             end_out   = self.checkType(end)
-            step_out  = self.checkType(step) if step is not None else None
+            step_out  = self.checkType(step) if step is not None else ('int', 1, 'INTEGER')
             if terminal_label not in self.labels:
                 self.error(f"DO references undefined label {terminal_label}")
             return ('do', terminal_label, var_out, start_out, end_out, step_out)
@@ -266,7 +290,7 @@ class SemanticAnalyser:
             self.offset = 0
             self.labels = set()
             new_stmts = self.analyseStmts(stmts)
-            return ('program', name, new_stmts)
+            return ('program', name, new_stmts) , self.symtab
 
         if tag == 'function':
             _, return_type, name, params, stmts = unit
@@ -275,13 +299,19 @@ class SemanticAnalyser:
             self.labels = set()
             self.symtab[name] = {'type': return_type, 'kind': 'scalar', 'offset': self.offset}
             self.offset += 1
+            for pname in params:
+                self.symtab[pname] = {'type': None, 'kind': 'param', 'offset': self.offset}
+                self.offset += 1
             new_stmts = self.analyseStmts(stmts)
-            return ('function', return_type, name, params, new_stmts)
+            return ('function', return_type, name, params, new_stmts) , self.symtab
 
         if tag == 'subroutine':
             _, name, params, stmts = unit
             self.symtab = {}
             self.offset = 0
             self.labels = set()
+            for pname in params:
+                self.symtab[pname] = {'type': None, 'kind': 'param', 'offset': self.offset}
+                self.offset += 1
             new_stmts = self.analyseStmts(stmts)
-            return ('subroutine', name, params, new_stmts)
+            return ('subroutine', name, params, new_stmts) , self.symtab
