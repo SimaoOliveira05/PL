@@ -1,9 +1,5 @@
 from irgen import Procedure
-
-INTRINSICS = {
-    'MOD':  'MOD',
-    'INT':  'FTOI',
-}
+from intrinsics import INTRINSICS as _INTRINSICS
 
 # ── Instruções TAC produzidas pelo irgen ──────────────────────────────────────
 #
@@ -157,12 +153,16 @@ class CodeGenerator:
                 self.store(instr[1])
 
             if type == "unary":
-                op = instr[2]
+                op  = instr[2]
                 src = instr[3]
-                if op == '-':
+                if op == 'NEG':
                     self.emit("PUSHI 0")
                     self.push(src)
                     self.emit("SUB")
+                elif op == 'FNEG':
+                    self.emit("PUSHF 0.0")
+                    self.push(src)
+                    self.emit("FSUB")
                 else:
                     self.push(src)
                     self.emit(op)
@@ -185,10 +185,10 @@ class CodeGenerator:
             if type == "print":             
                 for val, typ in instr[1]:
                     self.push(val)
-                    if typ == 'INTEGER':   
+                    if typ == 'INTEGER' or typ == 'LOGICAL':   
                         self.emit("WRITEI")
                     elif typ == 'REAL':    
-                        self.emit("WRITEF")      
+                        self.emit("WRITEF")   
                     else:                  
                         self.emit("WRITES")
                 self.emit("WRITELN")   
@@ -231,8 +231,8 @@ class CodeGenerator:
                 #   ('call',      None, name, [args])         chamada de subrotina
                 for arg in instr[3]:
                     self.push(arg)
-                if instr[2] in INTRINSICS:
-                    self.emit(INTRINSICS[instr[2]])
+                if instr[2] in _INTRINSICS:
+                    self.emit(_INTRINSICS[instr[2]])
                 else:
                     self.emit(f"PUSHA {instr[2]}")
                     self.emit("CALL")

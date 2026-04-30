@@ -105,13 +105,13 @@ def p_stmt_labeled(p):
     '''
     stmt : LABEL unlabeled_stmt
     '''
-    p[0] = ('labeled', p[1], p[2])
+    p[0] = (('labeled', p[1], p[2]), p.lineno(1))
 
 def p_stmt_unlabeled(p):
     '''
     stmt : unlabeled_stmt
     '''
-    p[0] = p[1]
+    p[0] = (p[1], p.lineno(1))
 
 def p_unlabeled_stmt(p):
     '''
@@ -380,9 +380,9 @@ def p_expr_call_or_arr(p):
 
 def p_error(p):
     if p:
-        print(f"Syntax error at '{p.value}' (type: {p.type}) on line {p.lineno}")
+        raise SyntaxError(f"Syntax error at '{p.value}' (type: {p.type}) on line {p.lineno}")
     else:
-        print("Syntax error: unexpected end of input")
+        raise SyntaxError("Syntax error: unexpected end of input")
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 

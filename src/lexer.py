@@ -106,8 +106,7 @@ t_ignore = ' \t'
 
 # ── Error handling ───────────────────────────────────────────────────────────
 def t_error(t):
-    print(f"Illegal character '{t.value[0]}' at line {t.lineno}")
-    t.lexer.skip(1)
+    raise SyntaxError(f"Illegal character '{t.value[0]}' at line {t.lineno}")
 
 # ── Build the lexer ──────────────────────────────────────────────────────────
 lexer = lex.lex()

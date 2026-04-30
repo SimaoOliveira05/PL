@@ -1,14 +1,5 @@
 
-# ── Intrinsic functions ────────────────────────────────────────────────────────
-
-INTRINSICS = {
-    'MOD':  'INTEGER',
-    'ABS':  'INTEGER',
-    'SQRT': 'REAL',
-    'INT':  'INTEGER',
-    'MAX':  'INTEGER',
-    'MIN':  'INTEGER',
-}
+from intrinsics import INTRINSICS as _INTRINSICS
 
 _INT_OPS  = {'+': 'ADD',  '-': 'SUB',  '*': 'MUL',  '/': 'DIV'}
 _REAL_OPS = {'+': 'FADD', '-': 'FSUB', '*': 'FMUL', '/': 'FDIV'}
@@ -23,9 +14,11 @@ class SemanticAnalyser:
         self.symtab = {}
         self.offset = 0
         self.labels = set()
+        self.current_line = None
 
     def error(self, message):
-        raise Exception(f'Semantic error: {message}')
+        line = f" (line {self.current_line})" if self.current_line else ""
+        raise Exception(f'Semantic error{line}: {message}')
 
     # ── Entry point ────────────────────────────────────────────────────────────
 
@@ -80,6 +73,8 @@ class SemanticAnalyser:
         if tag == 'var':
             name = expr[1]
             info = self.lookup(name)
+            if info['kind'] == 'array':
+                self.error(f"Array '{name}' used without index")
             return ('var', name, info['type'], info['offset'])
 
         if tag == 'int':
@@ -152,8 +147,11 @@ class SemanticAnalyser:
             name = expr[1]
             args = expr[2]
             args_out = [self.checkType(arg) for arg in args]
-            if name in INTRINSICS:
-                return ('call', name, args_out, INTRINSICS[name])
+            if name in _INTRINSICS:
+                ret = _INTRINSICS[name][0]
+                if ret == 'SAME':
+                    ret = self.getType(args_out[0])
+                return ('call', name, args_out, ret)
             info = self.lookup(name)
             if info['kind'] == 'array':
                 if len(args_out) != 1:
@@ -221,8 +219,8 @@ class SemanticAnalyser:
         if tag == 'if':
             _, condition, then_stmts, else_stmts = stmt
             cond_out = self.checkType(condition)
-            then_out = [self.checkStmt(s) for s in then_stmts]
-            else_out = [self.checkStmt(s) for s in else_stmts] if else_stmts else None
+            then_out = [self._check(s) for s in then_stmts]
+            else_out = [self._check(s) for s in else_stmts] if else_stmts else None
             return ('if', cond_out, then_out, else_out)
 
         if tag == 'goto':
@@ -230,6 +228,9 @@ class SemanticAnalyser:
             if label not in self.labels:
                 self.error(f"GOTO references undefined label {label}")
             return ('goto', label)
+
+        if tag == 'continue':
+            return ('continue',)
 
         if tag == 'return':
             return ('return',)
@@ -240,31 +241,37 @@ class SemanticAnalyser:
 
     # ── AST traversal ─────────────────────────────────────────────────────────
 
+    def _check(self, stmt_with_line):
+        node, lineno = stmt_with_line
+        self.current_line = lineno
+        return self.checkStmt(node)
+
     def analyseStmts(self, stmts):
         output   = []
         do_stack = []
 
         # scan for labels first so forward references (GOTO, DO) work
-        for stmt in stmts:
-            if stmt[0] == 'labeled':
-                _, label, inner = stmt
+        for node, lineno in stmts:
+            if node[0] == 'labeled':
+                _, label, inner = node
                 self.labels.add(label)
 
-        for stmt in stmts:
-            tag = stmt[0]
+        for node, lineno in stmts:
+            self.current_line = lineno
+            tag = node[0]
 
             if tag not in ('labeled', 'do'):
-                out  = self.checkStmt(stmt)
+                out  = self.checkStmt(node)
                 dest = do_stack[-1][5] if do_stack else output
                 dest.append(out)
 
             elif tag == 'do':
-                out = self.checkStmt(stmt)
+                out = self.checkStmt(node)
                 _, lbl, var_out, start_out, end_out, step_out = out
                 do_stack.append([lbl, var_out, start_out, end_out, step_out, []])
 
             elif tag == 'labeled':
-                _, lbl, inner = stmt
+                _, lbl, inner = node
                 if inner[0] == 'continue' and do_stack and do_stack[-1][0] == lbl:
                     # matching CONTINUE closes the innermost DO loop
                     frame   = do_stack.pop()
@@ -272,7 +279,7 @@ class SemanticAnalyser:
                     dest    = do_stack[-1][5] if do_stack else output
                     dest.append(do_loop)
                 else:
-                    out  = self.checkStmt(stmt)
+                    out  = self.checkStmt(node)
                     dest = do_stack[-1][5] if do_stack else output
                     dest.append(out)
 

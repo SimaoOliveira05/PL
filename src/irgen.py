@@ -6,7 +6,7 @@
 #   ('bool',       value, 'LOGICAL') DONE
 #   ('str',        value, 'CHARACTER') DONE
 #   ('binop',      op, left, right, type)      op: 'ADD','SUB','MUL','DIV','FADD',... DONE
-#   ('unary',      op, operand, type)          op: 'NEG', 'NOT' DONE
+#   ('unary',      dst, op, src)               op: 'NEG', 'FNEG', 'NOT' DONE
 #   ('coerce',     'ITOF', expr, 'REAL') DONE
 #   ('arr_ref',    name, idx_expr, type, offset) DONE
 #   ('call',       name, [args], type)          chamada de função em posição de expressão DONE
@@ -50,7 +50,13 @@ class Procedure:
 
 
 class IRProgram:
-    procedures : list[Procedure]
+    procedures: list[Procedure]
+
+    def __init__(self, procedures):
+        self.procedures = procedures
+
+    def __iter__(self):
+        return iter(self.procedures)
 
 
 class IRGenerator:
@@ -105,7 +111,10 @@ class IRGenerator:
         elif nodeType == "unary":
             result = self.gen_expr(node[2])
             temp = self.new_temp()
-            self.emit(("unary", temp, node[1],result))
+            op = node[1]
+            if op == '-':
+                op = 'FNEG' if node[3] == 'REAL' else 'NEG'
+            self.emit(("unary", temp, op, result))
             return temp
         
         elif nodeType == "coerce":
@@ -189,22 +198,40 @@ class IRGenerator:
 
         if nodeType == "do_loop":
             #   ('do_loop', var, start, end, step_or_None, body_stmts)
-            var_name  = node[1][1]
+            var_name = node[1][1]
+            var_type = node[1][2]
+
+            sub_op = 'FSUB'  if var_type == 'REAL' else 'SUB'
+            mul_op = 'FMUL'  if var_type == 'REAL' else 'MUL'
+            cmp_op = 'FSUPEQ' if var_type == 'REAL' else 'SUPEQ'
+            add_op = 'FADD'  if var_type == 'REAL' else 'ADD'
+            zero   = 0.0     if var_type == 'REAL' else 0
+
             start_val = self.gen_expr(node[2])
             self.emit(("copy", var_name, start_val))
+            step_val = self.gen_expr(node[4])
+
             start_label = self.new_label()
             end_label   = self.new_label()
             self.emit(("label", start_label))
+
             var_temp  = self.gen_expr(node[1])
             end_temp  = self.gen_expr(node[3])
+
+            # condition: (end - var) * step >= 0  (works for any step sign)
+            diff_temp = self.new_temp()
+            self.emit(('binop', diff_temp, sub_op, end_temp, var_temp))
+            prod_temp = self.new_temp()
+            self.emit(('binop', prod_temp, mul_op, diff_temp, step_val))
             cond_temp = self.new_temp()
-            self.emit(('binop', cond_temp, 'INFEQ', var_temp, end_temp))
+            self.emit(('binop', cond_temp, cmp_op, prod_temp, zero))
             self.emit(("jz", end_label, cond_temp))
+
             for stmt in node[5]:
                 self.gen_stmt(stmt)
-            step_temp    = self.gen_expr(node[4])
+
             new_var_temp = self.new_temp()
-            self.emit(('binop', new_var_temp, 'ADD', var_temp, step_temp))
+            self.emit(('binop', new_var_temp, add_op, var_temp, step_val))
             self.emit(('copy', var_name, new_var_temp))
             self.emit(("jump", start_label))
             self.emit(("label", end_label))
@@ -219,6 +246,9 @@ class IRGenerator:
                 args.append(self.gen_expr(argNode))
             self.emit(("call", None, node[1], args))
         
+        if nodeType == "continue":
+            pass
+
         if nodeType == "return":
             if self.currProcedure.is_function:
                 self.emit(('return', self.currProcedure.name))
@@ -257,6 +287,6 @@ class IRGenerator:
 
             procedureList.append(procedure)
 
-        return procedureList
+        return IRProgram(procedureList)
 
             

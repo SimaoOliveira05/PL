@@ -64,34 +64,39 @@ if __name__ == '__main__':
         print(f"Usage: python {sys.argv[0]} <source.f>")
         sys.exit(1)
 
-    with open(sys.argv[1]) as f:
-        logical_lines = preprocess(f)
+    try:
+        with open(sys.argv[1]) as f:
+            logical_lines = preprocess(f)
 
-    stream = TokenStream(logical_lines)
-    ast = parser.parse(input=None, lexer=stream)
+        stream = TokenStream(logical_lines)
+        ast = parser.parse(input=None, lexer=stream)
 
-    print("=== AST ===")
-    pprint.pprint(ast)
+        print("=== AST ===")
+        pprint.pprint(ast)
 
-    print("\n=== Simple Semantic ===")
-    sa = Analyser()
-    result = sa.analyse(ast)
-    print("Symbol table:", sa.symtab)
-    pprint.pprint(result)
+        print("\n=== Simple Semantic ===")
+        sa = Analyser()
+        result = sa.analyse(ast)
+        print("Symbol table:", sa.symtab)
+        pprint.pprint(result)
 
-    print("\n=== IR ===")
-    ir_generator = IRGenerator()
-    ir_list= ir_generator.generate(result)
-    for proc in ir_list:            
-        print(f"\n--- {proc.name} ---")
-    for instr in proc.instructions:    
-        print(instr)
-    
-    cg = CodeGenerator()
-    for proc in ir_list:
-        cg.genProcedure(proc)
+        print("\n=== IR ===")
+        ir_generator = IRGenerator()
+        ir_list = ir_generator.generate(result)
+        for proc in ir_list:
+            print(f"\n--- {proc.name} ---")
+            for instr in proc.instructions:
+                print(instr)
 
-    print("\n=== VM Code ===")
-    for line in cg.output:
-        print(line)
+        cg = CodeGenerator()
+        for proc in ir_list:
+            cg.genProcedure(proc)
+
+        print("\n=== VM Code ===")
+        for line in cg.output:
+            print(line)
+
+    except (SyntaxError, Exception) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
