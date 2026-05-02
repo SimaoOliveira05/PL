@@ -1,23 +1,6 @@
 from irgen import Procedure
-from intrinsics import INTRINSICS as _INTRINSICS
-
-# ── Instruções TAC produzidas pelo irgen ──────────────────────────────────────
-#
-#   ('copy',      dst, src)                   atribuição escalar            DONE
-#   ('binop',     dst, op, left, right)        operação binária             DONE
-#   ('unary',     dst, op, src)               operação unária               DONE
-#   ('coerce',    dst, 'ITOF', src)           conversão de tipo             DONE
-#   ('load_arr',  dst, name, idx)             leitura de array              DONE
-#   ('store_arr', name, idx, val)             escrita em array              DONE
-#   ('read',      var)                        leitura escalar de stdin      DONE
-#   ('read_arr',  name, idx)                  leitura de array de stdin     DONE
-#   ('print',     [vals])                     impressão                     DONE
-#   ('label',     name)                       marca posição                 DONE
-#   ('jump',      label)                      salto incondicional           DONE
-#   ('jz',        label, cond)                salto se zero                 DONE
-#   ('call',      dst, name, [args])          chamada de função (dst = temp)
-#   ('call',      None, name, [args])         chamada de subrotina
-#   ('return',    val_or_None)                retorno
+from ir import *
+from ir import INTRINSICS as _INTRINSICS
 
 
 class CodeGenerator:
@@ -74,10 +57,18 @@ class CodeGenerator:
 
     def collectTemps(self, procedure):
         tempSet = set()
-        for instruction in procedure.instructions:
-            for field in instruction:
-                if self.isTemp(field):
-                    tempSet.add(field)
+        for instr in procedure.instructions:
+            for val in vars(instr).values():
+                if self.isTemp(val):
+                    tempSet.add(val)
+                elif isinstance(val, list):
+                    for item in val:
+                        if self.isTemp(item):
+                            tempSet.add(item)
+                        elif isinstance(item, tuple):
+                            for subitem in item:
+                                if self.isTemp(subitem):
+                                    tempSet.add(subitem)
         ordered = sorted(tempSet, key=lambda t: int(t[1:]))
         base = self.localSize
         self.temps = {name: base + offset for offset, name in enumerate(ordered)}
@@ -88,7 +79,6 @@ class CodeGenerator:
         return self.symtab[name]['offset']
 
     def arrayBase(self, name):
-        # Empilha o endereco base do array (frame ptr + offset).
         self.emit("PUSHFP" if self.useLocal else "PUSHGP")
         self.push(self.varOffset(name))
         self.emit("PADD")
@@ -134,116 +124,105 @@ class CodeGenerator:
         self.emit("PUSHN " + str(self.localSize + len(self.temps)))
 
         for instr in procedure.instructions:
-            type = instr[0]
 
-            if type == "copy":
-                self.push(instr[2])
-                self.store(instr[1])
+            if isinstance(instr, Copy):
+                self.push(instr.src)
+                self.store(instr.dst)
 
-            if type == "binop":
-            #('binop',     dst, op, left, right)        
-                self.push(instr[3])
-                self.push(instr[4])
-                self.emit(instr[2])
-                self.store(instr[1])
+            elif isinstance(instr, Binop):
+                self.push(instr.left)
+                self.push(instr.right)
+                self.emit(instr.op)
+                self.store(instr.dst)
 
-            if type == "coerce":
-                self.push(instr[3])
-                self.emit(instr[2])
-                self.store(instr[1])
+            elif isinstance(instr, Coerce):
+                self.push(instr.src)
+                self.emit(instr.op)
+                self.store(instr.dst)
 
-            if type == "unary":
-                op  = instr[2]
-                src = instr[3]
-                if op == 'NEG':
+            elif isinstance(instr, Unary):
+                if instr.op == 'NEG':
                     self.emit("PUSHI 0")
-                    self.push(src)
+                    self.push(instr.src)
                     self.emit("SUB")
-                elif op == 'FNEG':
+                elif instr.op == 'FNEG':
                     self.emit("PUSHF 0.0")
-                    self.push(src)
+                    self.push(instr.src)
                     self.emit("FSUB")
                 else:
-                    self.push(src)
-                    self.emit(op)
-                self.store(instr[1])
+                    self.push(instr.src)
+                    self.emit(instr.op)
+                self.store(instr.dst)
 
-            if type == "label":
-                self.emit(str(instr[1])+ ":")
+            elif isinstance(instr, Label):
+                self.emit(str(instr.name) + ":")
 
-            if type == "jump":
-                self.emit("JUMP " + str(instr[1]))
+            elif isinstance(instr, Jump):
+                self.emit("JUMP " + str(instr.label))
 
-            if type == "read":
+            elif isinstance(instr, Read):
                 self.emit("READ")
-                if self.symtab[instr[1]]['type'] == "INTEGER":
+                if self.symtab[instr.var]['type'] == "INTEGER":
                     self.emit("ATOI")
                 else:
                     self.emit("ATOF")
-                self.store(instr[1])
+                self.store(instr.var)
 
-            if type == "print":             
-                for val, typ in instr[1]:
+            elif isinstance(instr, Print):
+                for val, typ in instr.vals:
                     self.push(val)
-                    if typ == 'INTEGER' or typ == 'LOGICAL':   
+                    if typ in ('INTEGER', 'LOGICAL'):
                         self.emit("WRITEI")
-                    elif typ == 'REAL':    
-                        self.emit("WRITEF")   
-                    else:                  
+                    elif typ == 'REAL':
+                        self.emit("WRITEF")
+                    else:
                         self.emit("WRITES")
-                self.emit("WRITELN")   
+                self.emit("WRITELN")
 
-            if type == "jz":
-                self.push(instr[2])
-                self.emit("JZ " + instr[1])
+            elif isinstance(instr, Jz):
+                self.push(instr.cond)
+                self.emit("JZ " + instr.label)
 
-
-            if type == "load_arr":
-                #   ('load_arr',  dst, name, idx)             leitura de array
-                self.arrayBase(instr[2])
-                self.push(instr[3])
+            elif isinstance(instr, LoadArr):
+                self.arrayBase(instr.name)
+                self.push(instr.idx)
                 self.emit("PADD")
                 self.emit("LOAD 0")
-                self.store(instr[1])
+                self.store(instr.dst)
 
-            if type == "store_arr":
-                #   ('store_arr', name, idx, val)             escrita em array
-                self.arrayBase(instr[1])
-                self.push(instr[2])
+            elif isinstance(instr, StoreArr):
+                self.arrayBase(instr.name)
+                self.push(instr.idx)
                 self.emit("PADD")
-                self.push(instr[3])
+                self.push(instr.val)
                 self.emit("STORE 0")
 
-            if type == "read_arr":
-                #   ('read_arr',  name, idx)                  leitura de array de stdin
-                self.arrayBase(instr[1])
-                self.push(instr[2])
+            elif isinstance(instr, ReadArr):
+                self.arrayBase(instr.name)
+                self.push(instr.idx)
                 self.emit("PADD")
                 self.emit("READ")
-                if self.symtab[instr[1]]['type'] == "INTEGER":
+                if self.symtab[instr.name]['type'] == "INTEGER":
                     self.emit("ATOI")
                 else:
                     self.emit("ATOF")
                 self.emit("STORE 0")
 
-            if type == "call":
-                #   ('call',      dst, name, [args])          chamada de função (dst = temp)
-                #   ('call',      None, name, [args])         chamada de subrotina
-                for arg in instr[3]:
+            elif isinstance(instr, Call):
+                for arg in instr.args:
                     self.push(arg)
-                if instr[2] in _INTRINSICS:
-                    self.emit(_INTRINSICS[instr[2]])
+                if instr.name in _INTRINSICS:
+                    self.emit(_INTRINSICS[instr.name])
                 else:
-                    self.emit(f"PUSHA {instr[2]}")
+                    self.emit(f"PUSHA {instr.name}")
                     self.emit("CALL")
-                if instr[1] is not None:
-                    self.store(instr[1])
+                if instr.dst is not None:
+                    self.store(instr.dst)
 
-            if type == "return":
-                #   ('return',    val_or_None)                retorno
-                if instr[1] is not None:
-                    self.push(instr[1])
+            elif isinstance(instr, Return):
+                if instr.val is not None:
+                    self.push(instr.val)
                 self.emit("RETURN")
-        
+
         if procedure.kind == "program":
             self.emit("STOP")

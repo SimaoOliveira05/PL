@@ -9,6 +9,7 @@ from parser import parser
 from semantic import SemanticAnalyser as Analyser
 from irgen import IRGenerator
 from codegen import CodeGenerator
+from optimizer import Optimizer
 
 
 def _make_token(type_, value, lineno):
@@ -83,6 +84,14 @@ if __name__ == '__main__':
         print("\n=== IR ===")
         ir_generator = IRGenerator()
         ir_list = ir_generator.generate(result)
+        for proc in ir_list:
+            print(f"\n--- {proc.name} ---")
+            for instr in proc.instructions:
+                print(instr)
+
+        print("\n=== IR (optimized) ===")
+        opt = Optimizer()
+        ir_list = opt.optimize(ir_list)
         for proc in ir_list:
             print(f"\n--- {proc.name} ---")
             for instr in proc.instructions:

@@ -1,5 +1,5 @@
 
-from intrinsics import INTRINSICS as _INTRINSICS
+from ir import INTRINSICS as _INTRINSICS
 
 _INT_OPS  = {'+': 'ADD',  '-': 'SUB',  '*': 'MUL',  '/': 'DIV'}
 _REAL_OPS = {'+': 'FADD', '-': 'FSUB', '*': 'FMUL', '/': 'FDIV'}
