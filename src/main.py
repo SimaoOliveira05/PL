@@ -61,47 +61,59 @@ class TokenStream:
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print(f"Usage: python {sys.argv[0]} <source.f>")
+    args = sys.argv[1:]
+    quiet = '-q' in args
+    args = [a for a in args if a != '-q']
+
+    if not args:
+        print(f"Usage: python {sys.argv[0]} [-q] <source.f>")
         sys.exit(1)
 
     try:
-        with open(sys.argv[1]) as f:
+        with open(args[0]) as f:
             logical_lines = preprocess(f)
 
         stream = TokenStream(logical_lines)
         ast = parser.parse(input=None, lexer=stream)
 
-        print("=== AST ===")
-        pprint.pprint(ast)
+        if not quiet:
+            print("=== AST ===")
+            pprint.pprint(ast)
 
-        print("\n=== Simple Semantic ===")
         sa = Analyser()
         result = sa.analyse(ast)
-        print("Symbol table:", sa.symtab)
-        pprint.pprint(result)
 
-        print("\n=== IR ===")
+        if not quiet:
+            print("\n=== Simple Semantic ===")
+            print("Symbol table:", sa.symtab)
+            pprint.pprint(result)
+
         ir_generator = IRGenerator()
         ir_list = ir_generator.generate(result)
-        for proc in ir_list:
-            print(f"\n--- {proc.name} ---")
-            for instr in proc.instructions:
-                print(instr)
 
-        print("\n=== IR (optimized) ===")
+        if not quiet:
+            print("\n=== IR ===")
+            for proc in ir_list:
+                print(f"\n--- {proc.name} ---")
+                for instr in proc.instructions:
+                    print(instr)
+
         opt = Optimizer()
         ir_list = opt.optimize(ir_list)
-        for proc in ir_list:
-            print(f"\n--- {proc.name} ---")
-            for instr in proc.instructions:
-                print(instr)
+
+        if not quiet:
+            print("\n=== IR (optimized) ===")
+            for proc in ir_list:
+                print(f"\n--- {proc.name} ---")
+                for instr in proc.instructions:
+                    print(instr)
 
         cg = CodeGenerator()
         for proc in ir_list:
             cg.genProcedure(proc)
 
-        print("\n=== VM Code ===")
+        if not quiet:
+            print("\n=== VM Code ===")
         for line in cg.output:
             print(line)
 

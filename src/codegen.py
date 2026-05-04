@@ -121,7 +121,12 @@ class CodeGenerator:
             elif isinstance(instr, Binop):
                 self.push(instr.left)
                 self.push(instr.right)
-                self.emit(instr.op)
+                if instr.op == 'NEQ':
+                    # VM has no NEQ — negate EQUAL
+                    self.emit('EQUAL')
+                    self.emit('NOT')
+                else:
+                    self.emit(instr.op)
                 self.store(instr.dst)
 
             elif isinstance(instr, Coerce):
