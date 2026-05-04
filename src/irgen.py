@@ -1,32 +1,5 @@
 from ir import *
 
-class Procedure:
-    name: str
-    symtab: dict
-    instructions: list
-    is_function: bool
-    return_type: str | None
-    kind: str
-
-    def __init__(self, symtab, name, is_function, return_type, kind):
-        self.name = name
-        self.symtab = symtab
-        self.is_function = is_function
-        self.return_type = return_type
-        self.instructions = []
-        self.kind = kind
-
-
-class IRProgram:
-    procedures: list[Procedure]
-
-    def __init__(self, procedures):
-        self.procedures = procedures
-
-    def __iter__(self):
-        return iter(self.procedures)
-
-
 class IRGenerator:
     varCounter: int
     labelCounter: int
@@ -111,7 +84,7 @@ class IRGenerator:
             else:
                 self.emit(Copy(node[1][1], rightResult))
 
-        if nodeType == "print":
+        elif nodeType == "print":
             results = []
             for expr in node[1]:
                 val = self.gen_expr(expr)
@@ -119,7 +92,7 @@ class IRGenerator:
                 results.append((val, type_))
             self.emit(Print(results))
 
-        if nodeType == "read":
+        elif nodeType == "read":
             for expr in node[1]:
                 if expr[0] == "arr_ref":
                     result = self.gen_expr(expr[2])
@@ -127,7 +100,7 @@ class IRGenerator:
                 else:
                     self.emit(Read(expr[1]))
 
-        if nodeType == "if":
+        elif nodeType == "if":
             cond_result = self.gen_expr(node[1])
             if node[3] is not None:
                 else_label = self.new_label()
@@ -147,11 +120,11 @@ class IRGenerator:
                     self.gen_stmt(stmt)
                 self.emit(Label(end_label))
 
-        if nodeType == "labeled":
+        elif nodeType == "labeled":
             self.emit(Label(node[1]))
             self.gen_stmt(node[2])
 
-        if nodeType == "do_loop":
+        elif nodeType == "do_loop":
             var_name = node[1][1]
             var_type = node[1][2]
 
@@ -189,17 +162,17 @@ class IRGenerator:
             self.emit(Jump(start_label))
             self.emit(Label(end_label))
 
-        if nodeType == "goto":
+        elif nodeType == "goto":
             self.emit(Jump(node[1]))
 
-        if nodeType == "call":
+        elif nodeType == "call":
             args = [self.gen_expr(argNode) for argNode in node[2]]
             self.emit(Call(None, node[1], args))
 
-        if nodeType == "continue":
+        elif nodeType == "continue":
             pass
 
-        if nodeType == "return":
+        elif nodeType == "return":
             if self.currProcedure.is_function:
                 self.emit(Return(self.currProcedure.name))
             else:
@@ -209,14 +182,14 @@ class IRGenerator:
         procedureList = []
 
         for node, symtab in nodeList:
-            type = node[0]
-            if type == "program":
+            opType = node[0]
+            if opType == "program":
                 procedure = Procedure(symtab, node[1], False, None, "program")
                 statements = node[2]
-            elif type == "function":
+            elif opType == "function":
                 procedure = Procedure(symtab, node[2], True, node[1], "function")
                 statements = node[4]
-            elif type == "subroutine":
+            elif opType == "subroutine":
                 procedure = Procedure(symtab, node[1], False, None, "subroutine")
                 statements = node[3]
 

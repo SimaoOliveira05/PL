@@ -1,4 +1,4 @@
-from ir import Copy, Binop, Unary, Coerce, LoadArr, StoreArr, Read, ReadArr, Print, Label, Jump, Jz, Call, Return
+from ir import *
 
 OP_EVAL = {
     'ADD':    lambda a, b: a + b,
@@ -26,16 +26,6 @@ OP_EVAL = {
 
 class Optimizer:
 
-    def isTemp(self, name):
-        return isinstance(name, str) and name.startswith('t') and name[1:].isdigit()
-
-    def get_dst(self, instr):
-        if isinstance(instr, (Copy, Binop, Unary, Coerce, LoadArr)):
-            return instr.dst
-        if isinstance(instr, Call) and instr.dst is not None:
-            return instr.dst
-        return None
-
     def constant_folding(self, proc):
         new_instructions = []
         changed = False
@@ -57,72 +47,17 @@ class Optimizer:
         changed = False
 
         for instr in proc.instructions:
-            # substituição nos campos de cada dataclass
-            if isinstance(instr, Copy):
-                new_src = subst.get(instr.src, instr.src) if isinstance(instr.src, str) else instr.src
-                if new_src != instr.src:
-                    changed = True
-                instr = Copy(instr.dst, new_src)
+            new_instr = instr.substitute(subst)
+            if new_instr != instr:
+                changed = True
+            instr = new_instr
 
-            elif isinstance(instr, Binop):
-                new_l = subst.get(instr.left,  instr.left)  if isinstance(instr.left,  str) else instr.left
-                new_r = subst.get(instr.right, instr.right) if isinstance(instr.right, str) else instr.right
-                if new_l != instr.left or new_r != instr.right:
-                    changed = True
-                instr = Binop(instr.dst, instr.op, new_l, new_r)
-
-            elif isinstance(instr, Unary):
-                new_src = subst.get(instr.src, instr.src) if isinstance(instr.src, str) else instr.src
-                if new_src != instr.src:
-                    changed = True
-                instr = Unary(instr.dst, instr.op, new_src)
-
-            elif isinstance(instr, Coerce):
-                new_src = subst.get(instr.src, instr.src) if isinstance(instr.src, str) else instr.src
-                if new_src != instr.src:
-                    changed = True
-                instr = Coerce(instr.dst, instr.op, new_src)
-
-            elif isinstance(instr, LoadArr):
-                new_idx = subst.get(instr.idx, instr.idx) if isinstance(instr.idx, str) else instr.idx
-                if new_idx != instr.idx:
-                    changed = True
-                instr = LoadArr(instr.dst, instr.name, new_idx)
-
-            elif isinstance(instr, StoreArr):
-                new_idx = subst.get(instr.idx, instr.idx) if isinstance(instr.idx, str) else instr.idx
-                new_val = subst.get(instr.val, instr.val) if isinstance(instr.val, str) else instr.val
-                if new_idx != instr.idx or new_val != instr.val:
-                    changed = True
-                instr = StoreArr(instr.name, new_idx, new_val)
-
-            elif isinstance(instr, Jz):
-                new_cond = subst.get(instr.cond, instr.cond) if isinstance(instr.cond, str) else instr.cond
-                if new_cond != instr.cond:
-                    changed = True
-                instr = Jz(instr.label, new_cond)
-
-            elif isinstance(instr, Print):
-                new_vals = []
-                for val, t in instr.vals:
-                    new_val = subst.get(val, val) if isinstance(val, str) else val
-                    if new_val != val:
-                        changed = True
-                    new_vals.append((new_val, t))
-                instr = Print(new_vals)
-
-            elif isinstance(instr, Call):
-                new_args = [subst.get(a, a) if isinstance(a, str) else a for a in instr.args]
-                if new_args != instr.args:
-                    changed = True
-                instr = Call(instr.dst, instr.name, new_args)
-
-            # regista cópias simples
+            # regista cópias simples temp→valor para substituições futuras
             if isinstance(instr, Copy):
                 subst[instr.dst] = instr.src
 
             # invalida substituições cujo dst foi reatribuído
-            dst = self.get_dst(instr)
+            dst = instr.get_dst()
             if dst is not None:
                 subst = {k: v for k, v in subst.items() if k != dst and v != dst}
 
@@ -132,28 +67,17 @@ class Optimizer:
         return changed
 
     def dead_code_elimination(self, proc):
-        # recolhe todos os temps lidos
+        # recolhe todos os temps lidos em qualquer instrução
         used = set()
         for instr in proc.instructions:
-            dst = self.get_dst(instr)
-            for val in vars(instr).values():
-                if self.isTemp(val) and val != dst:
-                    used.add(val)
-                elif isinstance(val, list):
-                    for item in val:
-                        if self.isTemp(item):
-                            used.add(item)
-                        elif isinstance(item, tuple):
-                            for subitem in item:
-                                if self.isTemp(subitem):
-                                    used.add(subitem)
+            used |= instr.uses()
 
         # elimina instruções cujo dst é um temp nunca lido
         new_instructions = []
         changed = False
         for instr in proc.instructions:
-            dst = self.get_dst(instr)
-            if dst is not None and self.isTemp(dst) and dst not in used:
+            dst = instr.get_dst()
+            if dst is not None and is_temp(dst) and dst not in used:
                 changed = True
                 continue
             new_instructions.append(instr)

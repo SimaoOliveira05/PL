@@ -1,6 +1,5 @@
-from irgen import Procedure
 from ir import *
-from ir import INTRINSICS as _INTRINSICS
+from ir import _INTRINSICS
 
 
 class CodeGenerator:
@@ -22,9 +21,6 @@ class CodeGenerator:
 
     def emit(self, line):
         self.output.append(line)
-
-    def isTemp(self, name):
-        return isinstance(name, str) and name.startswith('t') and name[1:].isdigit()
 
     def globalsSize(self):
         size = 0
@@ -58,17 +54,10 @@ class CodeGenerator:
     def collectTemps(self, procedure):
         tempSet = set()
         for instr in procedure.instructions:
-            for val in vars(instr).values():
-                if self.isTemp(val):
-                    tempSet.add(val)
-                elif isinstance(val, list):
-                    for item in val:
-                        if self.isTemp(item):
-                            tempSet.add(item)
-                        elif isinstance(item, tuple):
-                            for subitem in item:
-                                if self.isTemp(subitem):
-                                    tempSet.add(subitem)
+            tempSet |= instr.uses()
+            dst = instr.get_dst()
+            if dst is not None and is_temp(dst):
+                tempSet.add(dst)
         ordered = sorted(tempSet, key=lambda t: int(t[1:]))
         base = self.localSize
         self.temps = {name: base + offset for offset, name in enumerate(ordered)}
@@ -94,7 +83,7 @@ class CodeGenerator:
             self.emit(f"PUSHF {name}")
 
         elif isinstance(name, str):
-            if self.isTemp(name):
+            if is_temp(name):
                 self.emit(f"PUSHL {self.temps[name]}")
             elif name in self.symtab:
                 op = "PUSHL" if self.useLocal else "PUSHG"
@@ -103,7 +92,7 @@ class CodeGenerator:
                 self.emit(f'PUSHS "{name}"')
 
     def store(self, name):
-        if self.isTemp(name):
+        if is_temp(name):
             self.emit(f"STOREL {self.temps[name]}")
         elif name in self.symtab:
             op = "STOREL" if self.useLocal else "STOREG"
