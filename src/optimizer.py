@@ -85,11 +85,55 @@ class Optimizer:
         proc.instructions = new_instructions
         return changed
 
+    def _replace_dst(self, instr, new_dst):
+        if isinstance(instr, Copy):
+            return Copy(new_dst, instr.src)
+        if isinstance(instr, Binop):
+            return Binop(new_dst, instr.op, instr.left, instr.right)
+        if isinstance(instr, Unary):
+            return Unary(new_dst, instr.op, instr.src)
+        if isinstance(instr, Coerce):
+            return Coerce(new_dst, instr.op, instr.src)
+        if isinstance(instr, LoadArr):
+            return LoadArr(new_dst, instr.name, instr.idx)
+        if isinstance(instr, Call):
+            return Call(new_dst, instr.name, instr.args)
+        return instr
+
+    def temp_forwarding(self, proc):
+        """SomeOp(dst=t) + Copy(dst=X, src=t) where t used once → SomeOp(dst=X)."""
+        use_count = {}
+        for instr in proc.instructions:
+            for t in instr.uses():
+                use_count[t] = use_count.get(t, 0) + 1
+
+        # temps used exactly once, in a Copy
+        forward = {}
+        for instr in proc.instructions:
+            if isinstance(instr, Copy) and is_temp(instr.src) and use_count.get(instr.src, 0) == 1:
+                forward[instr.src] = instr.dst
+
+        if not forward:
+            return False
+
+        new_instructions = []
+        for instr in proc.instructions:
+            if isinstance(instr, Copy) and instr.src in forward:
+                continue
+            dst = instr.get_dst()
+            if dst is not None and dst in forward:
+                instr = self._replace_dst(instr, forward[dst])
+            new_instructions.append(instr)
+
+        proc.instructions = new_instructions
+        return True
+
     def optimize(self, procedures):
         for proc in procedures:
             changed = True
             while changed:
                 changed  = self.constant_folding(proc)
+                changed |= self.temp_forwarding(proc)
                 changed |= self.copy_propagation(proc)
                 changed |= self.dead_code_elimination(proc)
         return procedures

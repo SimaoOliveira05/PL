@@ -33,6 +33,7 @@ class CodeGenerator:
     def buildFrame(self, procedure):
         self.frameMap = {}
         self.useLocal = procedure.kind != "program"
+        self.nParams = 0
 
         if not self.useLocal:
             self.localSize = self.globalsSize()
@@ -40,6 +41,7 @@ class CodeGenerator:
 
         params = [n for n, info in self.symtab.items() if info.get('kind') == 'param']
         n_params = len(params)
+        self.nParams = n_params
         for i, name in enumerate(params):
             self.frameMap[name] = i - n_params
 
@@ -203,6 +205,10 @@ class CodeGenerator:
                 self.emit("STORE 0")
 
             elif isinstance(instr, Call):
+                n_args = len(instr.args)
+                is_user_func = instr.dst is not None and instr.name not in _INTRINSICS
+                if is_user_func:
+                    self.emit("PUSHI 0")
                 for arg in instr.args:
                     self.push(arg)
                 if instr.name in _INTRINSICS:
@@ -210,12 +216,16 @@ class CodeGenerator:
                 else:
                     self.emit(f"PUSHA {instr.name}")
                     self.emit("CALL")
+                    if n_args > 0:
+                       self.emit(f"POP {n_args}")
                 if instr.dst is not None:
                     self.store(instr.dst)
 
             elif isinstance(instr, Return):
                 if instr.val is not None:
                     self.push(instr.val)
+                    self.emit(f"STOREL {-(self.nParams + 1)}")
+                self.emit("POP " + str(self.localSize + len(self.temps)))
                 self.emit("RETURN")
 
         if procedure.kind == "program":
