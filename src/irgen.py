@@ -198,6 +198,14 @@ class IRGenerator:
             for stmts in statements:
                 self.gen_stmt(stmts)
 
+            if procedure.kind != "program": #emitir Return no fim da procedure no caso de não ter, None se for subroutine (não tem return)
+                last = procedure.instructions[-1] if procedure.instructions else None
+                if not isinstance(last, Return):
+                    if procedure.is_function: #Uma função sem return irá retornar 0 implicitamente (devido ao facto do caller ter alocado 0 para o return)
+                        self.emit(Return(procedure.name))
+                    else:
+                        self.emit(Return(None)) 
+            
             procedureList.append(procedure)
 
         return IRProgram(procedureList)

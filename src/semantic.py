@@ -39,6 +39,9 @@ class SemanticAnalyser:
                 info = self.symtab[name]
                 if info.get('kind') == 'param' and info['type'] is None:
                     info['type'] = type
+                    if vtag == "array":
+                        info['kind'] = 'array_param' #Precisamos de declarar que é um array como parametro
+                        info['size'] = var[2]
                     continue
                 self.error(f"Duplicate variable declaration: '{name}'")
 
@@ -47,8 +50,13 @@ class SemanticAnalyser:
                 self.offset += 1
             elif vtag == 'array':
                 size = var[2]
-                self.symtab[name] = {'type': type, 'kind': 'array', 'offset': self.offset, 'size': size}
-                self.offset += size
+                if isinstance(size,int):
+                    self.symtab[name] = {'type': type, 'kind': 'array', 'offset': self.offset, 'size': size}
+                else:
+                    self.symtab[name] = {'type': type, 'kind': 'dynamic-array', 'offset': self.offset, 'size': size}
+                self.offset += 1 #we use struct heap now so only need 1 slot in stack
+
+
 
     def lookup(self, name):
         if name not in self.symtab:
@@ -67,13 +75,15 @@ class SemanticAnalyser:
 
     # ── Expression type checker ────────────────────────────────────────────────
 
-    def checkType(self, expr):
+    def checkType(self, expr, passed_as_arg=False):
+        
         tag = expr[0]
 
         if tag == 'var':
             name = expr[1]
             info = self.lookup(name)
-            if info['kind'] == 'array':
+            #Passed as arg é colcoado a TRUE por call e por call_or_arr
+            if info['kind'] in ('array', 'dynamic_array') and not passed_as_arg:
                 self.error(f"Array '{name}' used without index")
             return ('var', name, info['type'], info['offset'])
 
@@ -146,14 +156,14 @@ class SemanticAnalyser:
         if tag == 'call_or_arr':
             name = expr[1]
             args = expr[2]
-            args_out = [self.checkType(arg) for arg in args]
+            args_out = [self.checkType(arg, passed_as_arg=True) for arg in args]
             if name in _INTRINSICS:
                 ret = _INTRINSICS[name][0]
                 if ret == 'SAME':
                     ret = self.getType(args_out[0])
                 return ('call', name, args_out, ret)
             info = self.lookup(name)
-            if info['kind'] == 'array':
+            if info['kind'] in ('array', 'array_param'):
                 if len(args_out) != 1:
                     self.error(f"Array '{name}' indexed with {len(args_out)} indices")
                 return ('arr_ref', name, args_out[0], info['type'], info['offset'])
@@ -237,7 +247,7 @@ class SemanticAnalyser:
 
         if tag == 'call':
             _, name, args = stmt
-            return ('call', name, [self.checkType(a) for a in args])
+            return ('call', name, [self.checkType(a,passed_as_arg=True) for a in args])
 
     # ── AST traversal ─────────────────────────────────────────────────────────
 

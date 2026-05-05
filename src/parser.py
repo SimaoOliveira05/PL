@@ -167,6 +167,7 @@ def p_var_decl_scalar(p):
 def p_var_decl_array(p):
     '''
     var_decl : ID '(' INTEGER_LIT ')'
+             | ID '(' ID ')'
     '''
     p[0] = ('array', p[1], p[3])
 
