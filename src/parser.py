@@ -1,6 +1,14 @@
 # src/parser.py
 import ply.yacc as yacc
 from lexer import tokens as _lexer_tokens
+from ast_nodes import (
+    Program, Function, Subroutine,
+    Scalar, Array, Decl,
+    Assign, If, Goto, Continue, Return, Read, Print,
+    CallStmt, Labeled, Do,
+    IntLit, RealLit, StrLit, BoolLit,
+    Var, ArrRef, Binop, Unary, CallOrArr,
+)
 
 # LABEL is injected synthetically by TokenStream (not matched by the lexer),
 # so we extend the token list here rather than adding it to lexer.py.
@@ -9,7 +17,6 @@ tokens = _lexer_tokens + ('LABEL',)
 start = 'file'
 
 # ── Operator precedence (lowest → highest) ───────────────────────────────────
-# Mirrors standard Fortran 77 precedence.
 precedence = (
     ('left',     'OR'),
     ('left',     'AND'),
@@ -17,13 +24,11 @@ precedence = (
     ('nonassoc', 'EQ', 'NE', 'LT', 'LE', 'GT', 'GE'),
     ('left',     '+', '-'),
     ('left',     '*', '/'),
-    ('right',    'UMINUS'), # UMINUS não é um token real — é um pseudo-token usado só na tabela de precedência para dar ao - unário (como em -X) precedência maior que a adição, via %prec UMINUS na regra.
+    ('right',    'UMINUS'),
     ('right',    'POWER'),
 )
 
 # ── File / Program units ──────────────────────────────────────────────────────
-# A Fortran 77 source file is one or more program units: a main program,
-# a FUNCTION subprogram, or a SUBROUTINE subprogram.
 
 def p_file(p):
     '''
@@ -49,9 +54,9 @@ def p_main_program(p):
                  | stmt_list END
     '''
     if len(p) == 5:
-        p[0] = ('program', p[2], p[3])
+        p[0] = Program(name=p[2], body=p[3])
     else:
-        p[0] = ('program', None, p[1])
+        p[0] = Program(name=None, body=p[1])
 
 # ── FUNCTION / SUBROUTINE definitions ────────────────────────────────────────
 
@@ -61,9 +66,9 @@ def p_function_def(p):
                  | type_kw FUNCTION ID '(' ')' stmt_list END
     '''
     if len(p) == 9:
-        p[0] = ('function', p[1], p[3], p[5], p[7])
+        p[0] = Function(return_type=p[1], name=p[3], params=p[5], body=p[7])
     else:
-        p[0] = ('function', p[1], p[3], [], p[6])
+        p[0] = Function(return_type=p[1], name=p[3], params=[], body=p[6])
 
 def p_subroutine_def(p):
     '''
@@ -71,9 +76,9 @@ def p_subroutine_def(p):
                    | SUBROUTINE ID '(' ')' stmt_list END
     '''
     if len(p) == 8:
-        p[0] = ('subroutine', p[2], p[4], p[6])
+        p[0] = Subroutine(name=p[2], params=p[4], body=p[6])
     else:
-        p[0] = ('subroutine', p[2], [], p[5])
+        p[0] = Subroutine(name=p[2], params=[], body=p[5])
 
 def p_param_list(p):
     '''
@@ -88,30 +93,23 @@ def p_param_list(p):
 # ── Statement list ────────────────────────────────────────────────────────────
 
 def p_stmt_list_many(p):
-    '''
-    stmt_list : stmt_list stmt
-    '''
+    'stmt_list : stmt_list stmt'
     p[0] = p[1] + [p[2]]
 
 def p_stmt_list_one(p):
-    '''
-    stmt_list : stmt
-    '''
+    'stmt_list : stmt'
     p[0] = [p[1]]
 
 # ── Statements ────────────────────────────────────────────────────────────────
 
 def p_stmt_labeled(p):
-    '''
-    stmt : LABEL unlabeled_stmt
-    '''
-    p[0] = (('labeled', p[1], p[2]), p.lineno(1))
+    'stmt : LABEL unlabeled_stmt'
+    p[0] = Labeled(label=p[1], stmt=p[2], lineno=p.lineno(1))
 
 def p_stmt_unlabeled(p):
-    '''
-    stmt : unlabeled_stmt
-    '''
-    p[0] = (p[1], p.lineno(1))
+    'stmt : unlabeled_stmt'
+    p[1].lineno = p.lineno(1)
+    p[0] = p[1]
 
 def p_unlabeled_stmt(p):
     '''
@@ -129,13 +127,10 @@ def p_unlabeled_stmt(p):
     p[0] = p[1]
 
 # ── Type declarations ─────────────────────────────────────────────────────────
-# Handles: INTEGER A, B  and  INTEGER A(5), B(3)
 
 def p_decl_stmt(p):
-    '''
-    decl_stmt : type_kw var_decl_list
-    '''
-    p[0] = ('decl', p[1], p[2])
+    'decl_stmt : type_kw var_decl_list'
+    p[0] = Decl(type=p[1], decls=p[2])
 
 def p_type_kw(p):
     '''
@@ -147,43 +142,33 @@ def p_type_kw(p):
     p[0] = p[1]
 
 def p_var_decl_list_many(p):
-    '''
-    var_decl_list : var_decl_list ',' var_decl
-    '''
+    "var_decl_list : var_decl_list ',' var_decl"
     p[0] = p[1] + [p[3]]
 
 def p_var_decl_list_one(p):
-    '''
-    var_decl_list : var_decl
-    '''
+    'var_decl_list : var_decl'
     p[0] = [p[1]]
 
 def p_var_decl_scalar(p):
-    '''
-    var_decl : ID
-    '''
-    p[0] = ('scalar', p[1])
+    'var_decl : ID'
+    p[0] = Scalar(name=p[1])
 
 def p_var_decl_array(p):
     '''
     var_decl : ID '(' INTEGER_LIT ')'
              | ID '(' ID ')'
     '''
-    p[0] = ('array', p[1], p[3])
+    p[0] = Array(name=p[1], size=p[3])
 
 # ── Assignment ────────────────────────────────────────────────────────────────
 
 def p_assign_stmt_scalar(p):
-    '''
-    assign_stmt : ID '=' expr
-    '''
-    p[0] = ('assign', ('var', p[1]), p[3])
+    "assign_stmt : ID '=' expr"
+    p[0] = Assign(lhs=Var(name=p[1]), rhs=p[3])
 
 def p_assign_stmt_array(p):
-    '''
-    assign_stmt : ID '(' expr ')' '=' expr
-    '''
-    p[0] = ('assign', ('arr_ref', p[1], p[3]), p[6])
+    "assign_stmt : ID '(' expr ')' '=' expr"
+    p[0] = Assign(lhs=ArrRef(name=p[1], idx=p[3]), rhs=p[6])
 
 # ── IF statement ──────────────────────────────────────────────────────────────
 
@@ -193,51 +178,34 @@ def p_if_stmt(p):
             | IF '(' expr ')' THEN stmt_list ELSE stmt_list ENDIF
     '''
     if len(p) == 8:
-        p[0] = ('if', p[3], p[6], None)
+        p[0] = If(cond=p[3], then_body=p[6], else_body=None)
     else:
-        p[0] = ('if', p[3], p[6], p[8])
+        p[0] = If(cond=p[3], then_body=p[6], else_body=p[8])
 
 # ── DO statement ──────────────────────────────────────────────────────────────
 # Only the header is parsed here. The body is the surrounding flat stmt_list,
 # terminated by the labeled CONTINUE. Semantic analysis restructures this into
-# a proper nested loop. This avoids a shift/reduce conflict that would arise
-# if we tried to match the body inline in LALR(1).
-#
-# Supports optional step:  DO 10 I = 1, N       (step defaults to 1)
-#                          DO 10 I = 1, N, 2    (explicit step)
+# a proper nested loop.
 
 def p_do_stmt(p):
     '''
     do_stmt : DO INTEGER_LIT ID '=' expr ',' expr ',' expr
             | DO INTEGER_LIT ID '=' expr ',' expr
     '''
-    # O passo é marcado como None em vez de ('int', 1) porque o parser
-    # deve representar fielmente o que está no código fonte, sem inventar
-    # valores. A distinção entre "passo omitido" e "passo explícito de 1"
-    # é preservada para a análise semântica, que aplica o default quando
-    # necessário.
     if len(p) == 10:
-        p[0] = ('do', p[2], p[3], p[5], p[7], p[9])
+        p[0] = Do(label=p[2], var=p[3], start=p[5], end=p[7], step=p[9])
     else:
-        p[0] = ('do', p[2], p[3], p[5], p[7], None)
+        p[0] = Do(label=p[2], var=p[3], start=p[5], end=p[7], step=None)
 
-# ── CONTINUE ──────────────────────────────────────────────────────────────────
+# ── CONTINUE / RETURN / CALL / GOTO ──────────────────────────────────────────
 
 def p_continue_stmt(p):
-    '''
-    continue_stmt : CONTINUE
-    '''
-    p[0] = ('continue',)
-
-# ── RETURN ────────────────────────────────────────────────────────────────────
+    'continue_stmt : CONTINUE'
+    p[0] = Continue()
 
 def p_return_stmt(p):
-    '''
-    return_stmt : RETURN
-    '''
-    p[0] = ('return',)
-
-# ── CALL ──────────────────────────────────────────────────────────────────────
+    'return_stmt : RETURN'
+    p[0] = Return()
 
 def p_call_stmt(p):
     '''
@@ -245,26 +213,19 @@ def p_call_stmt(p):
               | CALL ID
     '''
     if len(p) == 6:
-        p[0] = ('call', p[2], p[4])
+        p[0] = CallStmt(name=p[2], args=p[4])
     else:
-        p[0] = ('call', p[2], [])
-
-# ── GOTO ──────────────────────────────────────────────────────────────────────
+        p[0] = CallStmt(name=p[2], args=[])
 
 def p_goto_stmt(p):
-    '''
-    goto_stmt : GOTO INTEGER_LIT
-    '''
-    p[0] = ('goto', p[2])
+    'goto_stmt : GOTO INTEGER_LIT'
+    p[0] = Goto(label=p[2])
 
-# ── READ ──────────────────────────────────────────────────────────────────────
-# READ *, var, var, ...
+# ── READ / PRINT ──────────────────────────────────────────────────────────────
 
 def p_read_stmt(p):
-    '''
-    read_stmt : READ '*' ',' var_list
-    '''
-    p[0] = ('read', p[4])
+    "read_stmt : READ '*' ',' var_list"
+    p[0] = Read(targets=p[4])
 
 def p_var_list(p):
     '''
@@ -282,18 +243,13 @@ def p_lvalue(p):
            | ID
     '''
     if len(p) == 5:
-        p[0] = ('arr_ref', p[1], p[3])
+        p[0] = ArrRef(name=p[1], idx=p[3])
     else:
-        p[0] = ('var', p[1])
-
-# ── PRINT ─────────────────────────────────────────────────────────────────────
-# PRINT *, expr, expr, ...
+        p[0] = Var(name=p[1])
 
 def p_print_stmt(p):
-    '''
-    print_stmt : PRINT '*' ',' expr_list
-    '''
-    p[0] = ('print', p[4])
+    "print_stmt : PRINT '*' ',' expr_list"
+    p[0] = Print(values=p[4])
 
 def p_expr_list(p):
     '''
@@ -323,24 +279,18 @@ def p_expr_binop(p):
          | expr AND expr
          | expr OR expr
     '''
-    p[0] = ('binop', p[2], p[1], p[3])
+    p[0] = Binop(op=p[2], left=p[1], right=p[3])
 
 def p_expr_not(p):
-    '''
-    expr : NOT expr
-    '''
-    p[0] = ('unary', 'NOT', p[2])
+    'expr : NOT expr'
+    p[0] = Unary(op='NOT', operand=p[2])
 
 def p_expr_uminus(p):
-    '''
-    expr : '-' expr %prec UMINUS
-    '''
-    p[0] = ('unary', '-', p[2])
+    "expr : '-' expr %prec UMINUS"
+    p[0] = Unary(op='-', operand=p[2])
 
 def p_expr_group(p):
-    '''
-    expr : '(' expr ')'
-    '''
+    "expr : '(' expr ')'"
     p[0] = p[2]
 
 def p_expr_literals(p):
@@ -353,29 +303,25 @@ def p_expr_literals(p):
     '''
     t = p.slice[1].type
     if t == 'TRUE':
-        p[0] = ('bool', True)
+        p[0] = BoolLit(value=True)
     elif t == 'FALSE':
-        p[0] = ('bool', False)
+        p[0] = BoolLit(value=False)
     elif t == 'INTEGER_LIT':
-        p[0] = ('int', p[1])
+        p[0] = IntLit(value=p[1])
     elif t == 'REAL_LIT':
-        p[0] = ('real', p[1])
+        p[0] = RealLit(value=p[1])
     else:
-        p[0] = ('str', p[1])
+        p[0] = StrLit(value=p[1])
 
 def p_expr_var(p):
-    '''
-    expr : ID
-    '''
-    p[0] = ('var', p[1])
+    'expr : ID'
+    p[0] = Var(name=p[1])
 
 # Covers both array element access (e.g. NUMS(I)) and function calls
 # (e.g. CONVRT(N, B)). Disambiguated later in semantic analysis.
 def p_expr_call_or_arr(p):
-    '''
-    expr : ID '(' expr_list ')'
-    '''
-    p[0] = ('call_or_arr', p[1], p[3])
+    "expr : ID '(' expr_list ')'"
+    p[0] = CallOrArr(name=p[1], args=p[3])
 
 # ── Error handler ─────────────────────────────────────────────────────────────
 

@@ -6,7 +6,7 @@ import ply.lex as lex
 from preprocessor import preprocess
 from lexer import lexer
 from parser import parser
-from semantic import SemanticAnalyser as Analyser
+from semantic import SemanticAnalyser as Analyser, SemanticError
 from irgen import IRGenerator
 from codegen import CodeGenerator
 from optimizer import Optimizer
@@ -117,7 +117,7 @@ if __name__ == '__main__':
         for line in cg.output:
             print(line)
 
-    except (SyntaxError, Exception) as e:
+    except (SyntaxError, SemanticError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 

@@ -1,6 +1,13 @@
-from ir import *
-from ir import _INTRINSICS
-
+from ir import (
+    is_temp,
+    Copy, Binop, Unary, Coerce,
+    LoadArr, StoreArr, Read, ReadArr,
+    Print, Label, Jump, Jz,
+    Call, Return,
+    INTRINSIC_OPCODES,
+    KIND_ARRAY, KIND_DYN_ARRAY, KIND_PARAM, KIND_ARRAY_PARAM,
+    KIND_PROGRAM,
+)
 
 class CodeGenerator:
 
@@ -27,14 +34,14 @@ class CodeGenerator:
 
     def buildFrame(self, procedure):
         self.frameMap = {}
-        self.useLocal = procedure.kind != "program"
+        self.useLocal = procedure.kind != KIND_PROGRAM
         self.nParams = 0
 
         if not self.useLocal:
             self.localSize = self.globalsSize()
             return
 
-        params = [n for n, info in self.symtab.items() if info.get('kind') in ('param', 'array_param')]
+        params = [n for n, info in self.symtab.items() if info.get('kind') in (KIND_PARAM, KIND_ARRAY_PARAM)]
         n_params = len(params)
         self.nParams = n_params # nParams é guardado para o codegen do RETURN saber onde está o slot de retorno: -(nParams+1)
         for i, name in enumerate(params): # Atribui offsets negativos aos params. Com 2 params (A, N): A → -2, N → -1. Ficam abaixo do FP porque foram empilhados pelo caller antes do CALL.
@@ -42,7 +49,7 @@ class CodeGenerator:
 
         pos = 0
         for name, info in self.symtab.items(): #
-            if info.get('kind') in ('param', 'array_param'):
+            if info.get('kind') in (KIND_PARAM, KIND_ARRAY_PARAM):
                 continue
             info['offset'] = pos # temos que dar overrite ao offset na variavel por causa que estamos dentro de uma função
             pos += 1
@@ -69,14 +76,11 @@ class CodeGenerator:
 
     def push(self, name):
         if isinstance(name, bool):
-            name = 1 if name else 0
-
-        if isinstance(name, int):
+            self.emit(f"PUSHI {1 if name else 0}")
+        elif isinstance(name, int):
             self.emit(f"PUSHI {name}")
-
         elif isinstance(name, float):
             self.emit(f"PUSHF {name}")
-
         elif isinstance(name, str):
             if is_temp(name):
                 self.emit(f"PUSHL {self.temps[name]}")
@@ -100,7 +104,7 @@ class CodeGenerator:
         self.buildFrame(procedure)
         self.collectTemps(procedure)
 
-        if procedure.kind == "program":
+        if procedure.kind == KIND_PROGRAM:
             self.emit("START")
         else:
             self.emit(procedure.name + ":")
@@ -108,10 +112,10 @@ class CodeGenerator:
         self.emit("PUSHN " + str(self.localSize + len(self.temps)))
 
         for name, info in self.symtab.items():
-            if info['kind'] == 'array':
+            if info['kind'] == KIND_ARRAY:
                 self.emit("ALLOC " + str(info['size']))
                 self.store(name)
-            elif info['kind'] == 'dynamic_array':
+            elif info['kind'] == KIND_DYN_ARRAY:
                 self.push(info['size'])   # size é o nome do parâmetro ex: 'N'
                 self.emit("ALLOCN")
                 self.store(name)
@@ -139,17 +143,8 @@ class CodeGenerator:
                 self.store(instr.dst)
 
             elif isinstance(instr, Unary):
-                if instr.op == 'NEG':
-                    self.emit("PUSHI 0")
-                    self.push(instr.src)
-                    self.emit("SUB")
-                elif instr.op == 'FNEG':
-                    self.emit("PUSHF 0.0")
-                    self.push(instr.src)
-                    self.emit("FSUB")
-                else:
-                    self.push(instr.src)
-                    self.emit(instr.op)
+                self.push(instr.src)
+                self.emit(instr.op)
                 self.store(instr.dst)
 
             elif isinstance(instr, Label):
@@ -214,18 +209,18 @@ class CodeGenerator:
 
             elif isinstance(instr, Call):
                 n_args = len(instr.args)
-                is_user_func = instr.dst is not None and instr.name not in _INTRINSICS
+                is_user_func = instr.dst is not None and instr.name not in INTRINSIC_OPCODES
                 if is_user_func:
                     self.emit("PUSHI 0")
                 for arg in instr.args:
                     self.push(arg)
-                if instr.name in _INTRINSICS:
-                    self.emit(_INTRINSICS[instr.name])
+                if instr.name in INTRINSIC_OPCODES:
+                    self.emit(INTRINSIC_OPCODES[instr.name])
                 else:
                     self.emit(f"PUSHA {instr.name}")
                     self.emit("CALL")
                     if n_args > 0:
-                       self.emit(f"POP {n_args}")
+                        self.emit(f"POP {n_args}")
                 if instr.dst is not None:
                     self.store(instr.dst)
 
@@ -236,6 +231,6 @@ class CodeGenerator:
                 self.emit("POP " + str(self.localSize + len(self.temps)))
                 self.emit("RETURN")
 
-        if procedure.kind == "program":
+        if procedure.kind == KIND_PROGRAM:
             self.emit("STOP")
 

@@ -1,13 +1,20 @@
-from ir import *
+import ir
+from ir import KIND_PROGRAM, KIND_FUNCTION, KIND_SUBROUTINE
+from ast_nodes import (
+    Program, Function, Subroutine,
+    Assign, If, Goto, Continue, Return, Read, Print,
+    CallStmt, Labeled, DoLoop,
+    IntLit, RealLit, StrLit, BoolLit,
+    Var, ArrRef, Binop, Unary, CallExpr, Coerce,
+)
+
 
 class IRGenerator:
-    varCounter: int
-    labelCounter: int
-    currProcedure: Procedure
 
     def __init__(self):
         self.varCounter = 0
         self.labelCounter = 0
+        self.currProcedure = None
 
     def new_temp(self):
         var = "t" + str(self.varCounter)
@@ -22,111 +29,112 @@ class IRGenerator:
     def emit(self, instruction):
         self.currProcedure.instructions.append(instruction)
 
-    def exprType(self, node):
-        tag = node[0]
-        if tag == 'var':
-            return node[2]
-        if tag == 'arr_ref':
-            return node[3]
-        return node[-1]
+    # ── Expressions ────────────────────────────────────────────────────────────
 
     def gen_expr(self, node):
-        nodeType = node[0]
+        if isinstance(node, (IntLit, RealLit, StrLit, BoolLit)):
+            return node.value
 
-        if nodeType in ["int", "real", "bool", "str"]:
-            return node[1]
+        if isinstance(node, Var):
+            return node.name
 
-        elif nodeType == "var":
-            return node[1]
-
-        elif nodeType == "binop":
-            leftResult = self.gen_expr(node[2])
-            rightResult = self.gen_expr(node[3])
-            temp = self.new_temp()
-            self.emit(Binop(temp, node[1], leftResult, rightResult))
+        if isinstance(node, Binop):
+            left  = self.gen_expr(node.left)
+            right = self.gen_expr(node.right)
+            temp  = self.new_temp()
+            self.emit(ir.Binop(temp, node.op, left, right))
             return temp
 
-        elif nodeType == "unary":
-            result = self.gen_expr(node[2])
-            temp = self.new_temp()
-            op = node[1]
-            if op == '-':
-                op = 'FNEG' if node[3] == 'REAL' else 'NEG'
-            self.emit(Unary(temp, op, result))
+        if isinstance(node, Unary):
+            inner = self.gen_expr(node.operand)
+            temp  = self.new_temp()
+            if node.op == '-':
+                # The VM has no NEG/FNEG opcode — express as 0 - x
+                zero   = 0.0    if node.type == 'REAL' else 0
+                sub_op = 'FSUB' if node.type == 'REAL' else 'SUB'
+                self.emit(ir.Binop(temp, sub_op, zero, inner))
+            else:
+                self.emit(ir.Unary(temp, 'NOT', inner))
             return temp
 
-        elif nodeType == "coerce":
-            result = self.gen_expr(node[2])
-            temp = self.new_temp()
-            self.emit(Coerce(temp, node[1], result))
+        if isinstance(node, Coerce):
+            inner = self.gen_expr(node.src)
+            temp  = self.new_temp()
+            self.emit(ir.Coerce(temp, node.op, inner))
             return temp
 
-        elif nodeType == "arr_ref":
+        if isinstance(node, ArrRef):
+            idx  = self.gen_expr(node.idx)
             temp = self.new_temp()
-            result = self.gen_expr(node[2])
-            self.emit(LoadArr(temp, node[1], result))
+            self.emit(ir.LoadArr(temp, node.name, idx))
             return temp
 
-        elif nodeType == "call":
+        if isinstance(node, CallExpr):
+            args = [self.gen_expr(a) for a in node.args]
             temp = self.new_temp()
-            args = [self.gen_expr(argNode) for argNode in node[2]]
-            self.emit(Call(temp, node[1], args))
+            self.emit(ir.Call(temp, node.name, args))
             return temp
+
+        raise Exception(f'irgen: unknown expression type: {type(node).__name__}')
+
+    # ── Statements ─────────────────────────────────────────────────────────────
 
     def gen_stmt(self, node):
-        nodeType = node[0]
-
-        if nodeType == "assign":
-            rightResult = self.gen_expr(node[2])
-            if node[1][0] == "arr_ref":
-                result = self.gen_expr(node[1][2])
-                self.emit(StoreArr(node[1][1], result, rightResult))
+        if isinstance(node, Assign):
+            rhs = self.gen_expr(node.rhs)
+            if isinstance(node.lhs, ArrRef):
+                idx = self.gen_expr(node.lhs.idx)
+                self.emit(ir.StoreArr(node.lhs.name, idx, rhs))
             else:
-                self.emit(Copy(node[1][1], rightResult))
+                self.emit(ir.Copy(node.lhs.name, rhs))
+            return
 
-        elif nodeType == "print":
+        if isinstance(node, Print):
             results = []
-            for expr in node[1]:
-                val = self.gen_expr(expr)
-                type_ = self.exprType(expr)
-                results.append((val, type_))
-            self.emit(Print(results))
+            for e in node.values:
+                val = self.gen_expr(e)
+                results.append((val, e.type))
+            self.emit(ir.Print(results))
+            return
 
-        elif nodeType == "read":
-            for expr in node[1]:
-                if expr[0] == "arr_ref":
-                    result = self.gen_expr(expr[2])
-                    self.emit(ReadArr(expr[1], result))
+        if isinstance(node, Read):
+            for e in node.targets:
+                if isinstance(e, ArrRef):
+                    idx = self.gen_expr(e.idx)
+                    self.emit(ir.ReadArr(e.name, idx))
                 else:
-                    self.emit(Read(expr[1]))
+                    self.emit(ir.Read(e.name))
+            return
 
-        elif nodeType == "if":
-            cond_result = self.gen_expr(node[1])
-            if node[3] is not None:
+        if isinstance(node, If):
+            cond = self.gen_expr(node.cond)
+            if node.else_body is not None:
                 else_label = self.new_label()
-                end_label = self.new_label()
-                self.emit(Jz(else_label, cond_result))
-                for stmt in node[2]:
-                    self.gen_stmt(stmt)
-                self.emit(Jump(end_label))
-                self.emit(Label(else_label))
-                for stmt in node[3]:
-                    self.gen_stmt(stmt)
-                self.emit(Label(end_label))
+                end_label  = self.new_label()
+                self.emit(ir.Jz(else_label, cond))
+                for s in node.then_body:
+                    self.gen_stmt(s)
+                self.emit(ir.Jump(end_label))
+                self.emit(ir.Label(else_label))
+                for s in node.else_body:
+                    self.gen_stmt(s)
+                self.emit(ir.Label(end_label))
             else:
                 end_label = self.new_label()
-                self.emit(Jz(end_label, cond_result))
-                for stmt in node[2]:
-                    self.gen_stmt(stmt)
-                self.emit(Label(end_label))
+                self.emit(ir.Jz(end_label, cond))
+                for s in node.then_body:
+                    self.gen_stmt(s)
+                self.emit(ir.Label(end_label))
+            return
 
-        elif nodeType == "labeled":
-            self.emit(Label(node[1]))
-            self.gen_stmt(node[2])
+        if isinstance(node, Labeled):
+            self.emit(ir.Label(node.label))
+            self.gen_stmt(node.stmt)
+            return
 
-        elif nodeType == "do_loop":
-            var_name = node[1][1]
-            var_type = node[1][2]
+        if isinstance(node, DoLoop):
+            var_name = node.var.name
+            var_type = node.var.type
 
             sub_op = 'FSUB'   if var_type == 'REAL' else 'SUB'
             mul_op = 'FMUL'   if var_type == 'REAL' else 'MUL'
@@ -134,78 +142,89 @@ class IRGenerator:
             add_op = 'FADD'   if var_type == 'REAL' else 'ADD'
             zero   = 0.0      if var_type == 'REAL' else 0
 
-            start_val = self.gen_expr(node[2])
-            self.emit(Copy(var_name, start_val))
-            step_val = self.gen_expr(node[4])
+            start_val = self.gen_expr(node.start)
+            self.emit(ir.Copy(var_name, start_val))
+            end_val  = self.gen_expr(node.end)    # evaluated once before the loop
+            step_val = self.gen_expr(node.step)
 
             start_label = self.new_label()
-            end_label = self.new_label()
-            self.emit(Label(start_label))
+            end_label   = self.new_label()
+            self.emit(ir.Label(start_label))
 
-            var_temp = self.gen_expr(node[1])
-            end_temp = self.gen_expr(node[3])
+            var_temp = self.gen_expr(node.var)
 
             diff_temp = self.new_temp()
-            self.emit(Binop(diff_temp, sub_op, end_temp, var_temp))
+            self.emit(ir.Binop(diff_temp, sub_op, end_val, var_temp))
             prod_temp = self.new_temp()
-            self.emit(Binop(prod_temp, mul_op, diff_temp, step_val))
+            self.emit(ir.Binop(prod_temp, mul_op, diff_temp, step_val))
             cond_temp = self.new_temp()
-            self.emit(Binop(cond_temp, cmp_op, prod_temp, zero))
-            self.emit(Jz(end_label, cond_temp))
+            self.emit(ir.Binop(cond_temp, cmp_op, prod_temp, zero))
+            self.emit(ir.Jz(end_label, cond_temp))
 
-            for stmt in node[5]:
-                self.gen_stmt(stmt)
+            for s in node.body:
+                self.gen_stmt(s)
 
             new_var_temp = self.new_temp()
-            self.emit(Binop(new_var_temp, add_op, var_temp, step_val))
-            self.emit(Copy(var_name, new_var_temp))
-            self.emit(Jump(start_label))
-            self.emit(Label(end_label))
+            self.emit(ir.Binop(new_var_temp, add_op, var_temp, step_val))
+            self.emit(ir.Copy(var_name, new_var_temp))
+            self.emit(ir.Jump(start_label))
+            self.emit(ir.Label(end_label))
+            return
 
-        elif nodeType == "goto":
-            self.emit(Jump(node[1]))
+        if isinstance(node, Goto):
+            self.emit(ir.Jump(node.label))
+            return
 
-        elif nodeType == "call":
-            args = [self.gen_expr(argNode) for argNode in node[2]]
-            self.emit(Call(None, node[1], args))
+        if isinstance(node, CallStmt):
+            args = [self.gen_expr(a) for a in node.args]
+            self.emit(ir.Call(None, node.name, args))
+            return
 
-        elif nodeType == "continue":
-            pass
+        if isinstance(node, Continue):
+            return
 
-        elif nodeType == "return":
+        if isinstance(node, Return):
             if self.currProcedure.is_function:
-                self.emit(Return(self.currProcedure.name))
+                self.emit(ir.Return(self.currProcedure.name))
             else:
-                self.emit(Return(None))
+                self.emit(ir.Return(None))
+            return
+
+        raise Exception(f'irgen: unknown statement type: {type(node).__name__}')
+
+    # ── Top level ──────────────────────────────────────────────────────────────
 
     def generate(self, nodeList):
         procedureList = []
 
-        for node, symtab in nodeList:
-            opType = node[0]
-            if opType == "program":
-                procedure = Procedure(symtab, node[1], False, None, "program")
-                statements = node[2]
-            elif opType == "function":
-                procedure = Procedure(symtab, node[2], True, node[1], "function")
-                statements = node[4]
-            elif opType == "subroutine":
-                procedure = Procedure(symtab, node[1], False, None, "subroutine")
-                statements = node[3]
+        for unit, symtab in nodeList:
+            if isinstance(unit, Program):
+                procedure  = ir.Procedure(symtab, unit.name, False, None, KIND_PROGRAM)
+                statements = unit.body
+            elif isinstance(unit, Function):
+                procedure  = ir.Procedure(symtab, unit.name, True, unit.return_type, KIND_FUNCTION)
+                statements = unit.body
+            elif isinstance(unit, Subroutine):
+                procedure  = ir.Procedure(symtab, unit.name, False, None, KIND_SUBROUTINE)
+                statements = unit.body
+            else:
+                raise Exception(f'irgen: unknown program unit: {type(unit).__name__}')
 
             self.currProcedure = procedure
 
-            for stmts in statements:
-                self.gen_stmt(stmts)
+            for s in statements:
+                self.gen_stmt(s)
 
-            if procedure.kind != "program": #emitir Return no fim da procedure no caso de não ter, None se for subroutine (não tem return)
+            # ensure every function/subroutine ends with a Return
+            if procedure.kind != KIND_PROGRAM:
                 last = procedure.instructions[-1] if procedure.instructions else None
-                if not isinstance(last, Return):
-                    if procedure.is_function: #Uma função sem return irá retornar 0 implicitamente (devido ao facto do caller ter alocado 0 para o return)
-                        self.emit(Return(procedure.name))
+                if not isinstance(last, ir.Return):
+                    if procedure.is_function:
+                        # implicit return of the function name slot (initialised to 0 by caller)
+                        self.emit(ir.Return(procedure.name))
                     else:
-                        self.emit(Return(None)) 
-            
+                        self.emit(ir.Return(None))
+
             procedureList.append(procedure)
 
-        return IRProgram(procedureList)
+        return ir.IRProgram(procedureList)

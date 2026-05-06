@@ -1,4 +1,5 @@
-from ir import *
+import dataclasses
+from ir import is_temp, Copy, Binop
 
 OP_EVAL = {
     'ADD':    lambda a, b: a + b,
@@ -85,21 +86,6 @@ class Optimizer:
         proc.instructions = new_instructions
         return changed
 
-    def _replace_dst(self, instr, new_dst):
-        if isinstance(instr, Copy):
-            return Copy(new_dst, instr.src)
-        if isinstance(instr, Binop):
-            return Binop(new_dst, instr.op, instr.left, instr.right)
-        if isinstance(instr, Unary):
-            return Unary(new_dst, instr.op, instr.src)
-        if isinstance(instr, Coerce):
-            return Coerce(new_dst, instr.op, instr.src)
-        if isinstance(instr, LoadArr):
-            return LoadArr(new_dst, instr.name, instr.idx)
-        if isinstance(instr, Call):
-            return Call(new_dst, instr.name, instr.args)
-        return instr
-
     def temp_forwarding(self, proc):
         """SomeOp(dst=t) + Copy(dst=X, src=t) where t used once → SomeOp(dst=X)."""
         use_count = {}
@@ -108,10 +94,22 @@ class Optimizer:
                 use_count[t] = use_count.get(t, 0) + 1
 
         # temps used exactly once, in a Copy
+        instrs = proc.instructions
         forward = {}
-        for instr in proc.instructions:
-            if isinstance(instr, Copy) and is_temp(instr.src) and use_count.get(instr.src, 0) == 1:
-                forward[instr.src] = instr.dst
+        for i, instr in enumerate(instrs):
+            if not (isinstance(instr, Copy) and is_temp(instr.src) and use_count.get(instr.src, 0) == 1):
+                continue
+            # find the producer of instr.src — must be the immediately previous instruction
+            if i == 0:
+                continue
+            prev = instrs[i-1]
+            if prev.get_dst() != instr.src:
+                continue
+            # also: the Copy's destination must not be read by `prev` itself
+            if instr.dst in prev.uses():
+                continue
+
+            forward[instr.src] = instr.dst  
 
         if not forward:
             return False
@@ -122,7 +120,7 @@ class Optimizer:
                 continue
             dst = instr.get_dst()
             if dst is not None and dst in forward:
-                instr = self._replace_dst(instr, forward[dst])
+                instr = dataclasses.replace(instr, dst=forward[dst])
             new_instructions.append(instr)
 
         proc.instructions = new_instructions

@@ -1,30 +1,32 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+
+
+# ── Symbol table kinds ───────────────────────────────────────────────────────
+KIND_SCALAR      = 'scalar'
+KIND_ARRAY       = 'array'
+KIND_DYN_ARRAY   = 'dynamic_array'
+KIND_PARAM       = 'param'
+KIND_ARRAY_PARAM = 'array_param'
+KIND_FUNCTION    = 'function'
+KIND_SUBROUTINE  = 'subroutine'
+KIND_PROGRAM     = 'program'
+
 
 
 @dataclass
 class Procedure:
-    name: str
     symtab: dict
-    instructions: list
+    name: str
     is_function: bool
     return_type: str | None
     kind: str
+    instructions: list = field(default_factory=list)
 
-    def __init__(self, symtab, name, is_function, return_type, kind):
-        self.name = name
-        self.symtab = symtab
-        self.is_function = is_function
-        self.return_type = return_type
-        self.instructions = []
-        self.kind = kind
 
 @dataclass
 class IRProgram:
     procedures: list[Procedure]
-
-    def __init__(self, procedures):
-        self.procedures = procedures
 
     def __iter__(self):
         return iter(self.procedures)
@@ -309,4 +311,4 @@ INTRINSICS = {
 }
 
 # Subset with a direct VM opcode, used by codegen
-_INTRINSICS = {name: ops[1] for name, ops in INTRINSICS.items() if ops[1] is not None}
+INTRINSIC_OPCODES = {name: ops[1] for name, ops in INTRINSICS.items() if ops[1] is not None}
