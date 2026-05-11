@@ -1,5 +1,5 @@
 START
-PUSHN 9
+PUSHN 8
 PUSHS "Introduza um numero inteiro positivo:"
 WRITES
 WRITELN
@@ -41,8 +41,6 @@ l1:
 PUSHG 1
 PUSHI 1
 ADD
-STOREL 8
-PUSHL 8
 STOREG 1
 JUMP 20
 l0:

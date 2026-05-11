@@ -38,7 +38,11 @@ class CodeGenerator:
         self.nParams = 0
 
         if not self.useLocal:
-            self.localSize = self.globalsSize()
+            pos = 0
+            for name, info in self.symtab.items():
+                info['offset'] = pos
+                pos += 1
+            self.localSize = pos
             return
 
         params = [n for n, info in self.symtab.items() if info.get('kind') in (KIND_PARAM, KIND_ARRAY_PARAM)]

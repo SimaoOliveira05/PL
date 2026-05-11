@@ -320,8 +320,8 @@ def p_expr_var(p):
 # Covers both array element access (e.g. NUMS(I)) and function calls
 # (e.g. CONVRT(N, B)). Disambiguated later in semantic analysis.
 def p_expr_call_or_arr(p):
-    "expr : ID '(' expr_list ')'"
-    p[0] = CallOrArr(name=p[1], args=p[3])
+        "expr : ID '(' expr_list ')'"
+        p[0] = CallOrArr(name=p[1], args=p[3])
 
 # ── Error handler ─────────────────────────────────────────────────────────────
 

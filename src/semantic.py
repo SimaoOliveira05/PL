@@ -29,7 +29,6 @@ class SemanticAnalyser:
 
     def __init__(self):
         self.symtab = {}
-        self.offset = 0
         self.labels = set()
         self.current_line = None
         self.signatures = {}    # name → {'kind': 'function'|'subroutine', 'arity': int}
@@ -40,7 +39,6 @@ class SemanticAnalyser:
 
     def _resetScope(self):
         self.symtab = {}
-        self.offset = 0
         self.labels = set()
 
     # ── Entry point ────────────────────────────────────────────────────────────
@@ -73,14 +71,12 @@ class SemanticAnalyser:
                 self.error(f"Duplicate variable declaration: '{name}'")
 
             if isinstance(d, Scalar):
-                self.symtab[name] = {'type': type_, 'kind': KIND_SCALAR, 'offset': self.offset}
-                self.offset += 1
+                self.symtab[name] = {'type': type_, 'kind': KIND_SCALAR}
             elif isinstance(d, Array):
                 if isinstance(d.size, int):
-                    self.symtab[name] = {'type': type_, 'kind': KIND_ARRAY, 'offset': self.offset, 'size': d.size}
+                    self.symtab[name] = {'type': type_, 'kind': KIND_ARRAY, 'size': d.size}
                 else:
-                    self.symtab[name] = {'type': type_, 'kind': KIND_DYN_ARRAY, 'offset': self.offset, 'size': d.size}
-                self.offset += 1
+                    self.symtab[name] = {'type': type_, 'kind': KIND_DYN_ARRAY, 'size': d.size}
 
     def lookup(self, name):
         if name not in self.symtab:
@@ -310,12 +306,10 @@ class SemanticAnalyser:
 
         if isinstance(unit, Function):
             self._resetScope()
-            # the function name is a hidden local at offset 0 (used to set the return value)
-            self.symtab[unit.name] = {'type': unit.return_type, 'kind': KIND_SCALAR, 'offset': self.offset}
-            self.offset += 1
+            # the function name is a hidden local (used to set the return value)
+            self.symtab[unit.name] = {'type': unit.return_type, 'kind': KIND_SCALAR}
             for pname in unit.params:
-                self.symtab[pname] = {'type': None, 'kind': KIND_PARAM, 'offset': self.offset}
-                self.offset += 1
+                self.symtab[pname] = {'type': None, 'kind': KIND_PARAM}
             new_body = self.analyseStmts(unit.body)
             return Function(
                 return_type=unit.return_type, name=unit.name,
@@ -325,8 +319,7 @@ class SemanticAnalyser:
         if isinstance(unit, Subroutine):
             self._resetScope()
             for pname in unit.params:
-                self.symtab[pname] = {'type': None, 'kind': KIND_PARAM , 'offset': self.offset}
-                self.offset += 1
+                self.symtab[pname] = {'type': None, 'kind': KIND_PARAM}
             new_body = self.analyseStmts(unit.body)
             return Subroutine(
                 name=unit.name, params=unit.params,
