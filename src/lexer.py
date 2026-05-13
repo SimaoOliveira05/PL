@@ -2,7 +2,6 @@
 import ply.lex as lex
 
 # ── Token list ───────────────────────────────────────────────────────────────
-# Note: single-character tokens are in 'literals' below, not here
 tokens = (
     # Keywords (handled inside t_ID)
     'PROGRAM', 'END',
@@ -76,8 +75,6 @@ t_TRUE  = r'\.TRUE\.'
 t_FALSE = r'\.FALSE\.'
 
 # ── Value literals ───────────────────────────────────────────────────────────
-# REAL must come before INTEGER — '3.14' starts with digits and
-# PLY would match '3' as INTEGER_LIT before seeing the '.14'
 def t_REAL_LIT(t):
     r'\d+\.\d*([Ee][+-]?\d+)?|\.\d+([Ee][+-]?\d+)?'
     t.value = float(t.value)
