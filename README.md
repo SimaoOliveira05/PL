@@ -15,7 +15,6 @@ Fortran 77 compiler developed for a Programming Languages course. Written in Pyt
 - **Control flow** — `IF`/`THEN`/`ELSE`/`ENDIF`, `DO` loops (positive and negative step), `GOTO`
 - **Subprograms** — `SUBROUTINE` and typed `FUNCTION`, recursive calls, array parameters
 - **I/O** — `READ *` and `PRINT *`
-- **Intrinsics** — `MOD`, `INT`, `SQRT`, `ABS`, `MAX`, `MIN`
 - **Optimiser** — constant folding, copy propagation, dead-code elimination, temp forwarding
 
 ## Grade
