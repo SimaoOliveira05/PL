@@ -29,9 +29,6 @@ class CodeGenerator:
     def emit(self, line):
         self.output.append(line)
 
-    def globalsSize(self):
-        return len(self.symtab)
-
     def buildFrame(self, procedure):
         self.frameMap = {}
         self.useLocal = procedure.kind != KIND_PROGRAM
