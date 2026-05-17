@@ -137,7 +137,6 @@ def p_type_kw(p):
     type_kw : INTEGER
             | REAL
             | LOGICAL
-            | CHARACTER
     '''
     p[0] = p[1]
 
@@ -293,29 +292,28 @@ def p_expr_group(p):
     "expr : '(' expr ')'"
     p[0] = p[2]
 
-def p_expr_literals(p):
+def p_expr_atom(p):
     '''
     expr : INTEGER_LIT
          | REAL_LIT
          | STRING_LIT
          | TRUE
          | FALSE
+         | ID
     '''
     t = p.slice[1].type
-    if t == 'TRUE':
-        p[0] = BoolLit(value=True)
-    elif t == 'FALSE':
-        p[0] = BoolLit(value=False)
-    elif t == 'INTEGER_LIT':
+    if t == 'INTEGER_LIT':
         p[0] = IntLit(value=p[1])
     elif t == 'REAL_LIT':
         p[0] = RealLit(value=p[1])
-    else:
+    elif t == 'STRING_LIT':
         p[0] = StrLit(value=p[1])
-
-def p_expr_var(p):
-    'expr : ID'
-    p[0] = Var(name=p[1])
+    elif t == 'TRUE':
+        p[0] = BoolLit(value=True)
+    elif t == 'FALSE':
+        p[0] = BoolLit(value=False)
+    else:
+        p[0] = Var(name=p[1])
 
 # Covers both array element access (e.g. NUMS(I)) and function calls
 # (e.g. CONVRT(N, B)). Disambiguated later in semantic analysis.

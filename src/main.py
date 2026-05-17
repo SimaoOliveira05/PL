@@ -18,7 +18,7 @@ def _make_token(type_, value, lineno):
     tok.type   = type_
     tok.value  = value
     tok.lineno = lineno
-    tok.lexpos = 0
+    tok.lexpos = 0  
     return tok
 
 
