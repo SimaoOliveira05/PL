@@ -1,4 +1,4 @@
-# PL
+# FortradUM
 
 Fortran 77 compiler developed for a Programming Languages course. Written in Python using PLY (lex + yacc), it translates fixed-format Fortran 77 source into assembly for a course-provided virtual machine, passing through lexical analysis, syntactic analysis, semantic analysis, IR generation, optimisation, and code generation.
 
