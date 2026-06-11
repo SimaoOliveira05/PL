@@ -19,7 +19,7 @@ Fortran 77 compiler developed for a Programming Languages course. Written in Pyt
 
 ## Grade
 
-**Final Grade:** TBD / 20
+**Final Grade:** 19 / 20 ⭐
 
 ## Authors
 
